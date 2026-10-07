@@ -45,7 +45,7 @@ func TestRunAppliesKeyBindingsAndLeaderFromConfig(t *testing.T) {
 		"leader = \",\"\n[keys]\ntoggle-unified = \"U\"\n")
 	dir := repoWithRange(t)
 	got := captureProgram(t)
-	if err := run(dir, []string{"main..feature"}); err != nil {
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 40, Height: 5})
@@ -68,7 +68,7 @@ func TestRunRejectsKeyBindingsForUnknownActions(t *testing.T) {
 	dir := repoWithRange(t)
 	captureProgram(t)
 
-	err := run(dir, []string{"main..feature"})
+	_, err := run(dir, []string{"main..feature"})
 	if err == nil || !strings.Contains(err.Error(), "fly") {
 		t.Errorf("err = %v, want an error naming the unknown action", err)
 	}
@@ -80,7 +80,7 @@ func TestRunMalformedConfigFails(t *testing.T) {
 	dir := repoWithRange(t)
 	captureProgram(t)
 
-	err := run(dir, []string{"main..feature"})
+	_, err := run(dir, []string{"main..feature"})
 	if err == nil || !strings.Contains(err.Error(), "config") {
 		t.Errorf("err = %v, want a config error", err)
 	}
@@ -91,7 +91,7 @@ func TestRunThemeCommandLoadsCustomThemes(t *testing.T) {
 	writeTheme(t, cfgDir, "mine")
 	dir := repoWithRange(t)
 	got := captureProgram(t)
-	if err := run(dir, []string{"main..feature"}); err != nil {
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 40, Height: 5})

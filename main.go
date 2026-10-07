@@ -12,6 +12,7 @@ import (
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
@@ -19,9 +20,13 @@ import (
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
 )
 
-// exitError is the exit code for errors; 0 and 1 are reserved for the
-// review outcome.
-const exitError = 2
+// Exit codes: 0 after :lgtm or without open comments, 1 with open
+// comments, 2 and above for errors.
+const (
+	exitOK          = 0
+	exitOpenComment = 1
+	exitError       = 2
+)
 
 // version and commit are set at build time with -ldflags, e.g.
 //
@@ -62,45 +67,54 @@ type subject struct {
 
 // options are the command line flags.
 type options struct {
-	theme   string // --theme: theme name, overrides the config
-	version bool   // --version: print version and exit
+	theme         string // --theme: theme name, overrides the config
+	version       bool   // --version: print version and exit
+	printTemplate bool   // --print-template: print the built-in prompt template
 }
 
 func main() {
-	if err := run(".", os.Args[1:]); err != nil {
+	code, err := run(".", os.Args[1:])
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "lgtm:", err)
 		os.Exit(exitError)
 	}
+	os.Exit(code)
 }
 
-func run(dir string, args []string) error {
+// run resolves the review, starts the TUI and returns the process exit
+// code of the finished review.
+func run(dir string, args []string) (int, error) {
 	subj, opt, err := parse(args)
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	if opt.version {
 		fmt.Println(versionString())
-		return nil
+		return exitOK, nil
+	}
+	if opt.printTemplate {
+		fmt.Print(export.DefaultTemplate)
+		return exitOK, nil
 	}
 	cfgDir, err := config.Dir()
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	cfg, err := config.Load(cfgDir)
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	th, err := resolveTheme(opt.theme, cfg, cfgDir, backgroundKind)
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	km, err := ui.Keymap(keyOverrides(cfg))
 	if err != nil {
-		return fmt.Errorf("config: %w", err)
+		return exitError, fmt.Errorf("config: %w", err)
 	}
 	src, err := source.Open(dir)
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	var changes source.Changes
 	switch subj.kind {
@@ -112,7 +126,7 @@ func run(dir string, args []string) error {
 		changes, err = src.Commit(subj.rev)
 	}
 	if err != nil {
-		return err
+		return exitError, err
 	}
 	files := make([]diff.ReviewFile, len(changes.Files))
 	for i, f := range changes.Files {
@@ -126,22 +140,28 @@ func run(dir string, args []string) error {
 	if stateDir != "" {
 		state, err = review.Load(stateDir)
 		if err != nil {
-			return err
+			return exitError, err
 		}
 		if err := review.EnsureExcluded(stateDir); err != nil {
-			return err
+			return exitError, err
 		}
 	}
 	profile := termProfile()
-	_, err = runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
+	final, err := runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
 		Keymap: km,
 		LoadTheme: func(name string) (theme.Theme, error) {
 			return theme.Load(name, cfgDir, profile)
 		},
-		State: state,
-		Dir:   stateDir,
+		State:  state,
+		Dir:    stateDir,
+		CfgDir: cfgDir,
+		Branch: src.HeadBranch(),
+		Base:   changes.Base,
 	}))
-	return err
+	if err != nil {
+		return exitError, err
+	}
+	return final.(ui.Model).ExitCode(), nil
 }
 
 // keyOverrides turns the key settings of the config into keymap
@@ -201,6 +221,8 @@ func parse(args []string) (subject, options, error) {
 			rest = nil
 		case arg == "--version":
 			opt.version = true
+		case arg == "--print-template":
+			opt.printTemplate = true
 		case strings.HasPrefix(arg, "--theme="):
 			opt.theme = strings.TrimPrefix(arg, "--theme=")
 		case arg == "--theme":

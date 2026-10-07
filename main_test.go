@@ -15,6 +15,10 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
 )
 
 func TestParseNoArgsMeansDefault(t *testing.T) {
@@ -111,7 +115,7 @@ func TestParseRejectsMultipleArguments(t *testing.T) {
 func TestRunRangeShowsTheChanges(t *testing.T) {
 	dir := repoWithRange(t)
 	got := captureProgram(t)
-	if err := run(dir, []string{"main..feature"}); err != nil {
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
@@ -132,7 +136,7 @@ func TestRunCommitShowsOnlyThatCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := run(dir, []string{head}); err != nil {
+	if _, err := run(dir, []string{head}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
@@ -149,7 +153,7 @@ func TestRunCommitShowsOnlyThatCommit(t *testing.T) {
 func TestRunWithoutChangesShowsHintNamingTheSubject(t *testing.T) {
 	dir := repoWithRange(t)
 	got := captureProgram(t)
-	if err := run(dir, []string{"main..main"}); err != nil {
+	if _, err := run(dir, []string{"main..main"}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
@@ -239,10 +243,12 @@ func TestHelperProcess(t *testing.T) {
 		return
 	}
 	args := strings.Fields(os.Getenv("LGTM_HELPER_ARGS"))
-	if err := run(".", args); err != nil {
+	code, err := run(".", args)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "lgtm:", err)
 		os.Exit(exitError)
 	}
+	os.Exit(code)
 }
 
 // repoWithRange creates a repository on disk with a main and a feature
@@ -315,7 +321,7 @@ func repoHead(dir string) (string, error) {
 func TestRunPersistsTheReadStatus(t *testing.T) {
 	dir := repoWithRange(t)
 	got := captureProgram(t)
-	if err := run(dir, []string{"main..feature"}); err != nil {
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
@@ -338,4 +344,117 @@ func TestRunPersistsTheReadStatus(t *testing.T) {
 		t.Errorf("state.json lacks the read a.txt:\n%s", data)
 	}
 	_ = m
+}
+
+// TestPrintTemplatePrintsTheBuiltinTemplate pins the acceptance
+// criterion "Eingebautes Template lässt sich ausgeben": the flag prints
+// the built-in prompt template as the start point for custom templates.
+func TestPrintTemplatePrintsTheBuiltinTemplate(t *testing.T) {
+	stdout, stderr, code := runHelper(t, t.TempDir(), "--print-template")
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if stdout != export.DefaultTemplate {
+		t.Errorf("stdout = %q, want the built-in template", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+// TestParsePrintTemplateFlag pins the flag parsing.
+func TestParsePrintTemplateFlag(t *testing.T) {
+	_, opt, err := parse([]string{"--print-template"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opt.printTemplate {
+		t.Error("printTemplate = false, want true")
+	}
+}
+
+// stateWithComment writes a .lgtm/state.json with one open comment.
+func stateWithComment(t *testing.T, dir string) {
+	t.Helper()
+	s := review.NewState()
+	s.AddComment(review.Comment{
+		Path: "a.txt", Start: 1, End: 1,
+		Quote: "two", Category: review.Must, Text: "fix this",
+	})
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestExitCodeIsOneWhenQuittingWithOpenComments pins the exit contract
+// of story 76: quitting with open comments exits 1, so agent workflows
+// know to fix things.
+func TestExitCodeIsOneWhenQuittingWithOpenComments(t *testing.T) {
+	dir := repoWithRange(t)
+	stateWithComment(t, dir)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, cmd := got().Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if cmd != nil {
+		t.Fatal("first q returned a command, want the warning")
+	}
+	final, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("second q returned %T, want tea.QuitMsg", cmd())
+	}
+	if c := final.(ui.Model).ExitCode(); c != exitOpenComment {
+		t.Errorf("exit code = %d, want 1 for open comments", c)
+	}
+}
+
+// TestExitCodeIsZeroWhenQuittingWithoutOpenComments pins the exit
+// contract: a clean quit without open comments is 0.
+func TestExitCodeIsZeroWhenQuittingWithoutOpenComments(t *testing.T) {
+	dir := repoWithRange(t)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, cmd := got().Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("q returned %T, want tea.QuitMsg", cmd())
+	}
+	if c := m.(ui.Model).ExitCode(); c != 0 {
+		t.Errorf("exit code = %d, want 0 without open comments", c)
+	}
+}
+
+// TestColonLgtmApprovesWithExitCodeZero pins story 75 end to end: the
+// :lgtm command quits the program with exit code 0.
+func TestColonLgtmApprovesWithExitCodeZero(t *testing.T) {
+	dir := repoWithRange(t)
+	stateWithComment(t, dir)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m := got()
+	// Type :lgtm on the command line and run it with <cr>.
+	for _, k := range []tea.KeyPressMsg{
+		{Code: ':', Text: ":"},
+		{Code: 'l', Text: "l"}, {Code: 'g', Text: "g"},
+		{Code: 't', Text: "t"}, {Code: 'm', Text: "m"},
+	} {
+		m, _ = m.Update(k)
+	}
+	m, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal(":lgtm returned no command")
+	}
+	msg := cmd()
+	final, cmd := m.Update(msg)
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("approval moment returned %T, want tea.QuitMsg", cmd())
+	}
+	if c := final.(ui.Model).ExitCode(); c != 0 {
+		t.Errorf("exit code = %d, want 0 after :lgtm", c)
+	}
 }
