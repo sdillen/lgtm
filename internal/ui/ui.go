@@ -8,18 +8,45 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 )
 
 // contextWindow is how many unchanged lines surround each hunk in the
 // classic unified diff view.
 const contextWindow = 3
+
+// defaultWhichKeyDelay is how long a prefix waits before which-key shows
+// its follow-up keys.
+const defaultWhichKeyDelay = 300 * time.Millisecond
+
+// Options configure the review view. The zero value is the default.
+type Options struct {
+	// Keymap resolves keys to actions; nil means the default bindings.
+	Keymap *keymap.Keymap
+	// LoadTheme loads a theme by name for :theme; nil disables
+	// switching.
+	LoadTheme func(name string) (theme.Theme, error)
+	// WhichKeyDelay is the wait before which-key appears; 0 means the
+	// default of 300ms.
+	WhichKeyDelay time.Duration
+}
+
+// mode is what key presses go to.
+type mode int
+
+const (
+	modeNormal  mode = iota // the review view
+	modeHelp                // the ? help overlay
+	modeCmdline             // the : command line
+)
 
 // Model is the review view: one file at a time, with folds for the
 // unchanged runs of the full-file view and a toggleable unified view.
@@ -30,6 +57,7 @@ type Model struct {
 	files     []diff.ReviewFile
 	label     string
 	theme     theme.Theme
+	opts      Options
 	width     int
 	height    int
 	fileIdx   int
@@ -37,8 +65,15 @@ type Model struct {
 	offset    int    // index of the first visible row
 	foldsOpen []bool // per fold of the current file: open?
 	unified   bool   // show the classic unified diff instead of the full file
-	pending   string // prefix key ("g", "z", "]", "[") waiting for its second key
-	count     int    // pending count for j, k, ctrl-d, ctrl-u
+
+	mode       mode
+	keys       keymap.Dispatcher // the key sequence typed so far
+	keyGen     int               // counts key presses, to drop stale which-key timers
+	whichKey   bool              // the which-key popup is shown
+	helpOffset int               // first visible line of the help
+	cmdline    string            // text of the command line
+	message    string            // command result in the bottom line, until the next key
+	messageErr bool              // message is an error
 
 	// highlights are the syntax segments of the new-file content, one
 	// entry per line (indexed by new line number - 1). dimmed holds the
@@ -47,10 +82,24 @@ type Model struct {
 	dimmed     map[int]theme.Line
 }
 
+// whichKeyMsg fires when a prefix has waited long enough for which-key.
+// gen is the key press it belongs to.
+type whichKeyMsg struct{ gen int }
+
 // New returns a Model showing files of the review subject label with the
 // given theme.
-func New(files []diff.ReviewFile, label string, th theme.Theme) Model {
-	m := Model{files: files, label: label, theme: th}
+func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Model {
+	if opts.Keymap == nil {
+		km, err := Keymap(keymap.Overrides{})
+		if err != nil {
+			panic(fmt.Sprintf("default keymap: %v", err))
+		}
+		opts.Keymap = km
+	}
+	if opts.WhichKeyDelay == 0 {
+		opts.WhichKeyDelay = defaultWhichKeyDelay
+	}
+	m := Model{files: files, label: label, theme: th, opts: opts, keys: opts.Keymap.Dispatcher()}
 	m.resetFile()
 	return m
 }
@@ -62,143 +111,158 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.clamp()
+		m.clampHelp()
+	case whichKeyMsg:
+		if msg.gen == m.keyGen && m.keys.InPrefix() {
+			m.whichKey = true
+		}
 	case tea.KeyPressMsg:
-		key := msg.String()
-		if key == "q" || key == "ctrl+c" {
+		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		m = m.handleKey(msg)
+		m.keyGen++
+		m.whichKey = false
+		m.message, m.messageErr = "", false
+		if m.mode == modeCmdline {
+			return m.cmdlineKey(msg)
+		}
+		return m.dispatch(msg.String())
 	}
 	return m, nil
 }
 
-// handleKey applies one key press. Prefix keys ("g", "z", "]", "[") wait
-// for their second key before acting. A count before a motion repeats it
-// ("5j", "3]c") or selects a line ("5G", "5zz"), like in vim.
-func (m Model) handleKey(msg tea.KeyPressMsg) Model {
-	if len(m.files) == 0 {
-		return m
-	}
-	key := msg.String()
-	if m.pending != "" {
-		combo := m.pending + key
-		m.pending = ""
-		n := m.count
-		m.count = 0
-		switch combo {
-		case "gg":
-			if n > 0 {
-				m.cursor = m.rowOfLine(min(n-1, len(m.files[m.fileIdx].Lines)-1))
-			} else {
-				m.cursor, m.offset = 0, 0
-			}
-		case "zz":
-			if n > 0 {
-				m.cursor = m.rowOfLine(min(n-1, len(m.files[m.fileIdx].Lines)-1))
-			}
-			m.offset = m.cursor - m.bodyHeight()/2
-		case "zt":
-			if n > 0 {
-				m.cursor = m.rowOfLine(min(n-1, len(m.files[m.fileIdx].Lines)-1))
-			}
-			m.offset = m.cursor
-		case "zo":
-			if fi := m.foldAtCursor(); fi >= 0 && !m.foldsOpen[fi] {
-				m.foldsOpen[fi] = true
-				m.cursor = m.rowOfLine(m.files[m.fileIdx].Folds[fi].Start)
-			}
-		case "zc":
-			if fi := m.foldAtCursor(); fi >= 0 && m.foldsOpen[fi] {
-				m.foldsOpen[fi] = false
-				m.cursor = m.rowOfFold(fi)
-			}
-		case "zR":
-			old := m.cursorLine()
-			for i := range m.foldsOpen {
-				m.foldsOpen[i] = true
-			}
-			m.cursor = m.rowOfLine(old)
-		case "zM":
-			old := m.cursorLine()
-			for i := range m.foldsOpen {
-				m.foldsOpen[i] = false
-			}
-			m.cursor = m.rowOfLine(old)
-		case "]c", "[c":
-			dir := 1
-			if combo == "[c" {
-				dir = -1
-			}
-			for i := 0; i < max(1, n); i++ {
-				m.jumpToHunk(dir)
-			}
-		case "]f", "[f":
-			dir := 1
-			if combo == "[f" {
-				dir = -1
-			}
-			for i := 0; i < max(1, n); i++ {
-				if !m.jumpFile(dir) {
-					break
-				}
-			}
+// dispatch feeds a key through the keymap and runs the bound action. A
+// prefix starts the which-key timer.
+func (m Model) dispatch(key string) (Model, tea.Cmd) {
+	var r keymap.Result
+	m.keys, r = m.keys.Press(key)
+	switch r.Status {
+	case keymap.Pending:
+		if m.keys.InPrefix() {
+			gen := m.keyGen
+			return m, tea.Tick(m.opts.WhichKeyDelay, func(time.Time) tea.Msg {
+				return whichKeyMsg{gen: gen}
+			})
 		}
-		m.scrollCursorIntoView()
-		return m
+	case keymap.Matched:
+		if m.mode == modeHelp {
+			return m.helpAction(r.Action, r.Count), nil
+		}
+		return m.do(r.Action, r.Count)
+	case keymap.Unbound:
+		if m.mode == modeHelp && key == "esc" {
+			m.mode = modeNormal
+		}
 	}
-	switch key {
-	case "j", "down":
-		m.cursor = min(m.cursor+m.motion(), max(0, len(m.rows())-1))
-		m.scrollCursorIntoView()
-	case "k", "up":
-		m.cursor = max(m.cursor-m.motion(), 0)
-		m.scrollCursorIntoView()
-	case "ctrl+d":
+	return m, nil
+}
+
+// do runs an action of the review view. count is the count typed before
+// the keys, 0 if none: motions repeat, line jumps go to line count.
+func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
+	switch a {
+	case actQuit:
+		return m, tea.Quit
+	case actHelp:
+		m.mode, m.helpOffset = modeHelp, 0
+		return m, nil
+	case actCmdline:
+		m.mode, m.cmdline = modeCmdline, ""
+		return m, nil
+	case actThemeCmd:
+		m.mode, m.cmdline = modeCmdline, "theme "
+		return m, nil
+	}
+	if len(m.files) == 0 {
+		return m, nil
+	}
+	n := max(1, count)
+	lastLine := len(m.files[m.fileIdx].Lines) - 1
+	switch a {
+	case actDown:
+		m.cursor = min(m.cursor+n, max(0, len(m.rows())-1))
+	case actUp:
+		m.cursor = max(m.cursor-n, 0)
+	case actHalfDown:
 		half := max(1, m.bodyHeight()/2)
-		n := m.motion()
 		rows := m.rows()
 		m.offset = min(m.offset+n*half, max(0, len(rows)-m.bodyHeight()))
 		m.cursor = min(m.cursor+n*half, max(0, len(rows)-1))
-	case "ctrl+u":
+	case actHalfUp:
 		half := max(1, m.bodyHeight()/2)
-		n := m.motion()
 		m.offset = max(m.offset-n*half, 0)
 		m.cursor = max(m.cursor-n*half, 0)
-	case "G":
-		if m.count > 0 {
-			m.cursor = m.rowOfLine(min(m.count-1, len(m.files[m.fileIdx].Lines)-1))
-			m.count = 0
+	case actTop:
+		if count > 0 {
+			m.cursor = m.rowOfLine(min(count-1, lastLine))
+		} else {
+			m.cursor, m.offset = 0, 0
+		}
+	case actBottom:
+		if count > 0 {
+			m.cursor = m.rowOfLine(min(count-1, lastLine))
 		} else {
 			m.cursor = max(0, len(m.rows())-1)
 			m.offset = max(0, len(m.rows())-m.bodyHeight())
 		}
-	case "u":
-		// u toggles the unified view. It deliberately is not vim's undo:
-		// lgtm only reads, and the classic diff view is one key away.
-		m.unified = !m.unified
-		m.cursor, m.offset = 0, 0
-	case "g", "z", "]", "[":
-		m.pending = key
-		return m
-	default:
-		if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
-			m.count = m.count*10 + int(key[0]-'0')
-			return m
+	case actCenter:
+		if count > 0 {
+			m.cursor = m.rowOfLine(min(count-1, lastLine))
 		}
-		m.count = 0
+		m.offset = m.cursor - m.bodyHeight()/2
+	case actCursorTop:
+		if count > 0 {
+			m.cursor = m.rowOfLine(min(count-1, lastLine))
+		}
+		m.offset = m.cursor
+	case actFoldOpen:
+		if fi := m.foldAtCursor(); fi >= 0 && !m.foldsOpen[fi] {
+			m.foldsOpen[fi] = true
+			m.cursor = m.rowOfLine(m.files[m.fileIdx].Folds[fi].Start)
+		}
+	case actFoldClose:
+		if fi := m.foldAtCursor(); fi >= 0 && m.foldsOpen[fi] {
+			m.foldsOpen[fi] = false
+			m.cursor = m.rowOfFold(fi)
+		}
+	case actFoldsOpenAll, actFoldsCloseAll:
+		old := m.cursorLine()
+		for i := range m.foldsOpen {
+			m.foldsOpen[i] = a == actFoldsOpenAll
+		}
+		m.cursor = m.rowOfLine(old)
+	case actNextHunk, actPrevHunk:
+		dir := 1
+		if a == actPrevHunk {
+			dir = -1
+		}
+		for range n {
+			m.jumpToHunk(dir)
+		}
+	case actNextFile, actPrevFile:
+		dir := 1
+		if a == actPrevFile {
+			dir = -1
+		}
+		for range n {
+			if !m.jumpFile(dir) {
+				break
+			}
+		}
+	case actUnified:
+		m.setUnified(!m.unified)
 	}
 	m.scrollCursorIntoView()
-	return m
+	return m, nil
 }
 
-// motion returns the pending count or 1 and resets it.
-func (m *Model) motion() int {
-	n := m.count
-	m.count = 0
-	if n == 0 {
-		return 1
+// setUnified switches between the full-file and the unified view.
+func (m *Model) setUnified(on bool) {
+	if on == m.unified {
+		return
 	}
-	return n
+	m.unified = on
+	m.cursor, m.offset = 0, 0
 }
 
 // jumpToHunk moves the cursor to the next (dir 1) or previous (dir -1)
@@ -267,7 +331,6 @@ func (m Model) rowOfHeader(line int) int {
 // highlights it once.
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
-	m.pending, m.count = "", 0
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
 		m.highlights, m.dimmed = nil, nil
@@ -461,7 +524,7 @@ func (m Model) View() tea.View {
 	} else {
 		content = m.fileView()
 	}
-	v := tea.NewView(content)
+	v := tea.NewView(m.withOverlay(content))
 	v.AltScreen = true
 	return v
 }
@@ -475,6 +538,12 @@ func (m Model) emptyView() string {
 	hint = append(hint, "", "Press q to quit.")
 	if h := max(0, m.height); len(hint) > h {
 		hint = hint[:h]
+	}
+	if bottom := m.bottomLine(); bottom != "" && m.height > 0 {
+		for len(hint) < m.height {
+			hint = append(hint, "")
+		}
+		hint[m.height-1] = bottom
 	}
 	lines := make([]string, len(hint))
 	for i, line := range hint {
@@ -492,12 +561,17 @@ func (m Model) fileView() string {
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString(ansi.Truncate(m.statusLine(), m.width, ""))
+	bottom := m.bottomLine()
+	if bottom == "" {
+		bottom = m.statusLine()
+	}
+	b.WriteString(ansi.Truncate(bottom, m.width, ""))
 	return b.String()
 }
 
 // statusLine shows file path, position in the file list and the +/−
-// statistics, plus the unified marker when the classic view is active.
+// statistics, plus the unified marker when the classic view is active and
+// the keys of a pending sequence.
 func (m Model) statusLine() string {
 	f := m.files[m.fileIdx]
 	added, deleted := f.Stats()
@@ -508,6 +582,9 @@ func (m Model) statusLine() string {
 	}
 	if m.unified {
 		parts = append(parts, "[unified]")
+	}
+	if typed := m.keys.Typed(); typed != "" {
+		parts = append(parts, typed)
 	}
 	return m.theme.Styles.Status.Render(strings.Join(parts, "  "))
 }

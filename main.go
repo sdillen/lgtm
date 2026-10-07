@@ -12,6 +12,7 @@ import (
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
@@ -64,9 +65,17 @@ func run(dir string, args []string) error {
 	if err != nil {
 		return err
 	}
-	th, err := resolveTheme(opt.theme, cfgDir, backgroundKind)
+	cfg, err := config.Load(cfgDir)
 	if err != nil {
 		return err
+	}
+	th, err := resolveTheme(opt.theme, cfg, cfgDir, backgroundKind)
+	if err != nil {
+		return err
+	}
+	km, err := ui.Keymap(keyOverrides(cfg))
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 	src, err := source.Open(dir)
 	if err != nil {
@@ -88,8 +97,32 @@ func run(dir string, args []string) error {
 	for i, f := range changes.Files {
 		files[i] = diff.New(f.Path, f.Old, f.New)
 	}
-	_, err = runProgram(ui.New(files, subjectLabel(subj, changes), th))
+	profile := termProfile()
+	_, err = runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
+		Keymap: km,
+		LoadTheme: func(name string) (theme.Theme, error) {
+			return theme.Load(name, cfgDir, profile)
+		},
+	}))
 	return err
+}
+
+// keyOverrides turns the key settings of the config into keymap
+// overrides.
+func keyOverrides(cfg config.Config) keymap.Overrides {
+	ov := keymap.Overrides{Leader: cfg.Leader}
+	if len(cfg.Keys) > 0 {
+		ov.Keys = make(map[keymap.Action][]string, len(cfg.Keys))
+		for action, seqs := range cfg.Keys {
+			ov.Keys[keymap.Action(action)] = seqs
+		}
+	}
+	return ov
+}
+
+// termProfile detects the colour profile of the terminal.
+func termProfile() colorprofile.Profile {
+	return colorprofile.Detect(os.Stderr, os.Environ())
 }
 
 // backgroundKind asks the terminal for its background colour. It is a
@@ -102,16 +135,12 @@ var backgroundKind = func() (theme.Kind, bool) {
 // file, then automatic light/dark detection. The theme is resolved for the
 // terminal's colour profile, so terminals without truecolor fall back to
 // the 256 colour palette.
-func resolveTheme(flagName, cfgDir string, detect func() (theme.Kind, bool)) (theme.Theme, error) {
+func resolveTheme(flagName string, cfg config.Config, cfgDir string, detect func() (theme.Kind, bool)) (theme.Theme, error) {
 	name := flagName
 	if name == "" {
-		cfg, err := config.Load(cfgDir)
-		if err != nil {
-			return theme.Theme{}, err
-		}
 		name = cfg.Theme
 	}
-	profile := colorprofile.Detect(os.Stderr, os.Environ())
+	profile := termProfile()
 	if name != "" {
 		return theme.Load(name, cfgDir, profile)
 	}
