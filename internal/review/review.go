@@ -1,7 +1,8 @@
 // Package review is the domain model of a review: its persisted machine
-// state. This vertical slice covers the read status per file; comments,
-// rounds and snapshots follow in later issues. The state lives in
-// .lgtm/state.json, which is excluded from git via .git/info/exclude.
+// state with the read status per file and the reviewer's comments; rounds
+// and snapshots follow in later issues. The state lives in
+// .lgtm/state.json, the open comments for the agent in .lgtm/review.md;
+// .lgtm/ is excluded from git via .git/info/exclude.
 package review
 
 import (
@@ -18,7 +19,7 @@ import (
 
 // Version is the schema version of state.json. It is exported for tests;
 // a state file written by a newer lgtm is rejected.
-const Version = 1
+const Version = 2
 
 // FileState is the persisted state of one file.
 type FileState struct {
@@ -30,10 +31,14 @@ type FileState struct {
 	Hash string `json:"hash,omitempty"`
 }
 
-// State is the persisted machine state of a review, keyed by file path.
+// State is the persisted machine state of a review: the read status
+// keyed by file path and the comments.
 type State struct {
 	Version int                  `json:"version"`
 	Files   map[string]FileState `json:"files,omitempty"`
+	// CommentList holds the comments in the order they were added; it is
+	// exported for JSON only, use the comment methods instead.
+	CommentList []Comment `json:"comments,omitempty"`
 }
 
 // NewState returns an empty state.
@@ -89,8 +94,9 @@ func Load(dir string) (*State, error) {
 	return &s, nil
 }
 
-// Save writes the state to <dir>/.lgtm/state.json, atomically, creating
-// the .lgtm directory when needed.
+// Save writes the state to <dir>/.lgtm/state.json and the open comments
+// for the agent to <dir>/.lgtm/review.md, each atomically, creating the
+// .lgtm directory when needed.
 func (s *State) Save(dir string) error {
 	stateDir := filepath.Join(dir, ".lgtm")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -100,14 +106,23 @@ func (s *State) Save(dir string) error {
 	if err != nil {
 		return fmt.Errorf("encode state: %w", err)
 	}
-	tmp := filepath.Join(stateDir, "state.json.tmp")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := writeAtomic(filepath.Join(stateDir, "state.json"), data); err != nil {
 		return fmt.Errorf("write state: %w", err)
 	}
-	if err := os.Rename(tmp, filepath.Join(stateDir, "state.json")); err != nil {
-		return fmt.Errorf("write state: %w", err)
+	if err := writeAtomic(filepath.Join(stateDir, "review.md"), []byte(s.markdown())); err != nil {
+		return fmt.Errorf("write review: %w", err)
 	}
 	return nil
+}
+
+// writeAtomic replaces the file at path with data via a temporary file,
+// so readers never see a half-written file.
+func writeAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // contentHash hashes the content that was read, so later rounds can tell
