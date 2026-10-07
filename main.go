@@ -197,6 +197,7 @@ func run(dir string, args []string) (int, error) {
 		Interdiff:   interdiff,
 		Snapshot:    snapshot,
 		StartScreen: true,
+		Icons:       cfg.Icons,
 		Animate:     &animate,
 	}))
 	if err != nil {

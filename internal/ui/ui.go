@@ -83,6 +83,9 @@ type Options struct {
 	// round, size and directory distribution) until the first key
 	// press. Off by default; the command enables it.
 	StartScreen bool
+	// Icons enables Nerd Font icons in the file list. Off by default;
+	// without a Nerd Font installed the list stays clean.
+	Icons bool
 	// Animate turns the smooth scroll of half-page moves and jumps and
 	// the slide-in of the overlays on; nil means off. The command
 	// enables it unless the config turns it off.

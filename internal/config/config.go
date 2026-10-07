@@ -33,6 +33,10 @@ type Config struct {
 	// SmoothScroll disables the animated scrolling of half-page moves
 	// and jumps when set to false; nil means on.
 	SmoothScroll *bool `toml:"smooth_scroll"`
+
+	// Icons enables Nerd Font icons in the file list. Without a Nerd
+	// Font installed the list stays clean. Default off.
+	Icons bool `toml:"icons"`
 }
 
 // KeySeqs are the key sequences of one action. In TOML they are a single

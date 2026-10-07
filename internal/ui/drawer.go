@@ -64,6 +64,10 @@ func (m Model) rowOfFile(fi int) int {
 	return -1
 }
 
+// treeLines renders the file tree rows. highlight is the row shown with
+// the cursor background, -1 for none. Read files carry a checkmark,
+// commented files a dot, files changed since the previous round a Δ;
+// with the icons option the status icons of the changes come first.
 func (m Model) treeLines(highlight int) []string {
 	lines := make([]string, len(m.tree))
 	for i, r := range m.tree {
@@ -73,6 +77,9 @@ func (m Model) treeLines(highlight int) []string {
 			style = m.theme.Styles.Fold
 			text += "/"
 		} else {
+			if m.opts.Icons {
+				text = m.fileIcon(r.file) + " " + text
+			}
 			if m.state.Read(m.files[r.file].Path) {
 				text += "  " + m.theme.Styles.Status.Render("✓")
 			}
@@ -89,6 +96,27 @@ func (m Model) treeLines(highlight int) []string {
 		lines[i] = style.Render(text)
 	}
 	return lines
+}
+
+// fileIcon is the Nerd Font icon of a file row: a plus for added
+// files, a minus for deleted ones, an exchange arrow for renames and a
+// pencil for modified files. Only shown with the icons option on; the
+// glyphs are from the classic Font Awesome set of Nerd Fonts.
+func (m Model) fileIcon(fi int) string {
+	f := m.files[fi]
+	style := m.theme.Styles.Fold
+	var icon string
+	switch {
+	case f.Added():
+		icon, style = "\uf055", m.theme.Styles.Added // nf-fa-plus_circle
+	case f.Deleted():
+		icon, style = "\uf056", m.theme.Styles.Deleted // nf-fa-minus_circle
+	case f.OldPath != "":
+		icon = "\uf0ec" // nf-fa-exchange: renamed
+	default:
+		icon = "\uf040" // nf-fa-pencil: modified
+	}
+	return style.Render(icon)
 }
 
 // hasComments reports whether the file carries at least one comment.

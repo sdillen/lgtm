@@ -153,3 +153,17 @@ func TestLoadWithoutSmoothScrollSettingMeansTheDefault(t *testing.T) {
 		t.Errorf("SmoothScroll = %v, want nil (the default)", *cfg.SmoothScroll)
 	}
 }
+
+func TestLoadParsesTheIconsSetting(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("icons = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Icons {
+		t.Error("Icons = false, want true")
+	}
+}
