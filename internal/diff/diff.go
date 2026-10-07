@@ -123,6 +123,13 @@ func (f ReviewFile) NewContent() string {
 	return b.String()
 }
 
+// Contents returns the old and the new content the view was computed
+// from, verbatim; empty for an added (deleted) file and for mode and
+// submodule entries.
+func (f ReviewFile) Contents() (old, new string) {
+	return f.old, f.new
+}
+
 // New computes the ReviewFile for path from the content before and after the
 // change. An empty before (after) stands for an added (deleted) file. The
 // change is classified: binary files become size-only info entries, generated

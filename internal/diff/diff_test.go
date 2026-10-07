@@ -361,3 +361,15 @@ func TestNewContentOfAnAddedFile(t *testing.T) {
 		t.Errorf("deleted file: NewContent = %q, want empty", got)
 	}
 }
+
+// TestContentsReturnsBothVersions pins that a ReviewFile hands back the
+// old and the new content it was computed from, verbatim, also after
+// the whitespace option changed the view; the review module relocates
+// comment anchors in them.
+func TestContentsReturnsBothVersions(t *testing.T) {
+	f := diff.New("f.go", "a\n  b\n", "a\n\tb\nc\n").WithIgnoreWS(true)
+	old, new := f.Contents()
+	if old != "a\n  b\n" || new != "a\n\tb\nc\n" {
+		t.Errorf("Contents = %q, %q", old, new)
+	}
+}
