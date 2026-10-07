@@ -1,6 +1,6 @@
 // Package review is the domain model of a review: its persisted machine
-// state with the read status per file and the reviewer's comments; rounds
-// and snapshots follow in later issues. The state lives in
+// state with the rounds and their snapshots, the read status per file
+// and the reviewer's comments. The state lives in
 // .lgtm/state.json, the open comments for the agent in .lgtm/review.md;
 // .lgtm/ is excluded from git via .git/info/exclude.
 package review
@@ -19,23 +19,30 @@ import (
 
 // Version is the schema version of state.json. It is exported for tests;
 // a state file written by a newer lgtm is rejected.
-const Version = 4
+const Version = 5
 
 // FileState is the persisted state of one file.
 type FileState struct {
 	// Read is true once the file end was visible (or the user marked
 	// the file read manually).
 	Read bool `json:"read"`
-	// Hash is the hash of the content that was read, so a later issue
-	// can reset the status when the content changed.
+	// Hash is the hash of the content that was read, so the status
+	// can be reset when the content changed.
 	Hash string `json:"hash,omitempty"`
 }
 
-// State is the persisted machine state of a review: the read status
-// keyed by file path and the comments.
+// State is the persisted machine state of a review: the rounds, the
+// read status keyed by file path and the comments.
 type State struct {
-	Version int                  `json:"version"`
-	Files   map[string]FileState `json:"files,omitempty"`
+	Version int `json:"version"`
+	// ID names the review in its snapshot refs.
+	ID string `json:"id,omitempty"`
+	// Rounds are the review rounds in order; use the round methods
+	// instead.
+	Rounds []Round              `json:"rounds,omitempty"`
+	Files  map[string]FileState `json:"files,omitempty"`
+	// Pos is where the reviewer left the review; use Position.
+	Pos *Position `json:"position,omitempty"`
 	// CommentList holds the comments in the order they were added; it is
 	// exported for JSON only, use the comment methods instead.
 	CommentList []Comment `json:"comments,omitempty"`
@@ -43,7 +50,7 @@ type State struct {
 
 // NewState returns an empty state.
 func NewState() *State {
-	return &State{Version: Version, Files: map[string]FileState{}}
+	return &State{Version: Version, ID: newID(), Files: map[string]FileState{}}
 }
 
 // Read reports whether path was read.
@@ -91,6 +98,7 @@ func Load(dir string) (*State, error) {
 	if s.Files == nil {
 		s.Files = map[string]FileState{}
 	}
+	s.Version = Version
 	return &s, nil
 }
 

@@ -64,17 +64,21 @@ type Comment struct {
 	Category Category `json:"category"`
 	Status   Status   `json:"status"`
 	Text     string   `json:"text"`
+	// Round is the review round the comment was made in; 0 before
+	// the first round.
+	Round int `json:"round,omitempty"`
 	// Orphaned reports that the quoted code was not found again when
 	// the review was reloaded: the anchor is the last known one. The
 	// comment keeps its status, so an open orphan is still exported.
 	Orphaned bool `json:"orphaned,omitempty"`
 }
 
-// AddComment stores c as a new open comment with a fresh id and returns
-// the stored comment.
+// AddComment stores c as a new open comment of the current round with
+// a fresh id and returns the stored comment.
 func (s *State) AddComment(c Comment) Comment {
 	c.ID = newID()
 	c.Status = Open
+	c.Round = s.Round()
 	s.CommentList = append(s.CommentList, c)
 	return c
 }
