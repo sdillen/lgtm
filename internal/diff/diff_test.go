@@ -336,3 +336,28 @@ func assertLines(t *testing.T, got diff.ReviewFile, want []diff.Line) {
 		}
 	}
 }
+
+// TestNewContentReconstructsTheNewFile pins the content the reader sees:
+// the lines of the full-file view that exist in the new version, deleted
+// lines skipped, without a trailing newline. It is what the review module
+// hashes for the read status.
+func TestNewContentReconstructsTheNewFile(t *testing.T) {
+	f := diff.New("f.txt", "one\ntwo\n", "one\ntwo\nthree\n")
+
+	if got, want := f.NewContent(), "one\ntwo\nthree"; got != want {
+		t.Errorf("NewContent = %q, want %q", got, want)
+	}
+}
+
+// TestNewContentOfAnAddedFile pins that an added file yields its whole
+// content and a deleted file yields nothing.
+func TestNewContentOfAnAddedFile(t *testing.T) {
+	added := diff.New("a.txt", "", "x\ny\n")
+	if got, want := added.NewContent(), "x\ny"; got != want {
+		t.Errorf("added file: NewContent = %q, want %q", got, want)
+	}
+	deleted := diff.New("d.txt", "x\n", "")
+	if got := deleted.NewContent(); got != "" {
+		t.Errorf("deleted file: NewContent = %q, want empty", got)
+	}
+}

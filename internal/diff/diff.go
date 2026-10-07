@@ -90,6 +90,25 @@ func (f ReviewFile) Stats() (added, deleted int) {
 	return added, deleted
 }
 
+// NewContent reconstructs the new version of the file as the reader sees
+// it: the lines of the full-file view that exist in the new version, in
+// order, without a trailing newline. Deleted lines are skipped.
+func (f ReviewFile) NewContent() string {
+	var b strings.Builder
+	first := true
+	for _, l := range f.Lines {
+		if l.New == 0 {
+			continue
+		}
+		if !first {
+			b.WriteByte('\n')
+		}
+		b.WriteString(l.Text)
+		first = false
+	}
+	return b.String()
+}
+
 // New computes the ReviewFile for path from the content before and after the
 // change. An empty before (after) stands for an added (deleted) file.
 func New(path, before, after string) ReviewFile {
