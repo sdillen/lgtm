@@ -18,9 +18,9 @@ import (
 // no hunks, folds or comments. cursor and offset live in the model, as
 // line indexes.
 type contextFile struct {
-	path       string
-	lines      []string
-	highlights []theme.Line
+	path  string
+	lines []string
+	hl    *fileHighlights
 }
 
 // jumpEntry is one stop of the jumplist: a file of the review or a
@@ -115,9 +115,9 @@ func (m *Model) showContext(path string, line int) bool {
 		return false
 	}
 	m.context = &contextFile{
-		path:       path,
-		lines:      search.SplitLines(content),
-		highlights: m.theme.Highlighter.Highlight(path, content),
+		path:  path,
+		lines: search.SplitLines(content),
+		hl:    newTextHighlights(m.theme.Highlighter, path, content),
 	}
 	m.cursor = min(line, len(m.context.lines)-1)
 	m.offset, m.col = 0, 0
@@ -553,6 +553,7 @@ func (m Model) viewRows() int {
 // lines are soft-wrapped instead.
 func (m Model) contextView() string {
 	width := m.contentWidth()
+	m.context.hl.ensureNew(m.offset + m.bodyHeight() + highlightBuffer)
 	var b strings.Builder
 	if m.wrap {
 		m.renderWrapped(&b, width, len(m.context.lines), func(j int) string {
@@ -597,17 +598,12 @@ func (m Model) renderContextLine(idx int, cursor bool) string {
 	if cursor {
 		gutter = gutter.Background(st.Cursor)
 	}
-	segs := m.context.highlights[idx]
+	segs := m.context.hl.newLine(idx + 1)
 	if len(segs) == 0 && m.context.lines[idx] != "" {
 		segs = []theme.Segment{{Text: strings.ReplaceAll(m.context.lines[idx], "\t", "    ")}}
 	}
+	num := fmt.Sprintf("%4d ", idx+1)
 	var b strings.Builder
-	for _, s := range segs {
-		style := s.Style
-		if cursor {
-			style = style.Background(st.Cursor)
-		}
-		b.WriteString(style.Render(s.Text))
-	}
-	return gutter.Render(fmt.Sprintf("%4d ", idx+1)) + b.String()
+	m.renderBody(&b, segs, len(num), cursor)
+	return gutter.Render(num) + b.String()
 }

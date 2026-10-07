@@ -91,7 +91,7 @@ func (m *Model) setTheme(args []string) {
 		}
 		m.theme = th
 		if len(m.files) > 0 {
-			m.highlights, m.dimmed = highlightFile(m.theme.Highlighter, m.files[m.fileIdx])
+			m.hl = newFileHighlights(m.theme.Highlighter, m.files[m.fileIdx])
 		}
 	}
 }
@@ -185,7 +185,6 @@ func (m *Model) setIgnoreWS(on bool) {
 		m.files[i] = m.files[i].WithIgnoreWS(on)
 	}
 	if m.context == nil && len(m.files) > 0 {
-		m.highlights, m.dimmed = highlightFile(m.theme.Highlighter, m.files[m.fileIdx])
 		m.resetFile()
 	}
 }

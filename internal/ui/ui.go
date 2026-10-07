@@ -204,17 +204,36 @@ type Model struct {
 	// becomes visible, so the manual toggle is not undone by itself.
 	endVisible bool
 
-	// highlights are the syntax segments of the new-file content, one
-	// entry per line (indexed by new line number - 1). dimmed holds the
-	// dimmed segments of the deleted lines, keyed by line index.
-	highlights []theme.Line
-	dimmed     map[int]theme.Line
+	// hl are the syntax highlights of the current file, computed lazily
+	// for the visible area plus buffer: the new-file lines of the token
+	// stream and the dimmed deleted lines.
+	hl *fileHighlights
+
+	// rowsCache is the cached row list of rows(), rebuilt when the file
+	// view state changes (folds, mode, comments, files). rows() runs
+	// several times per keystroke and once per frame, so a 10k-line
+	// file must not be rebuilt every time. It lives behind a pointer so
+	// View, which is called on a copy, can refill it.
+	rowsCache *rowsCache
 
 	// changed is the number of files that changed in the source since
 	// the files were loaded; the status line hints at R. loadGen counts
 	// the reloads, so checks against older files are dropped.
 	changed int
 	loadGen int
+}
+
+// rowsCache is the cached row list of rows().
+type rowsCache struct {
+	rows []row
+}
+
+// invalidateRows drops the cached row list; call it whenever the file
+// view state changes: files, mode, folds, comments.
+func (m *Model) invalidateRows() {
+	if m.rowsCache != nil {
+		m.rowsCache.rows = nil
+	}
 }
 
 // whichKeyMsg fires when a prefix has waited long enough for which-key.
@@ -241,13 +260,14 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		opts.State = review.NewState()
 	}
 	m := Model{
-		files: files,
-		label: label,
-		theme: th,
-		opts:  opts,
-		keys:  opts.Keymap.Dispatcher(),
-		state: opts.State,
-		dir:   opts.Dir,
+		files:     files,
+		label:     label,
+		theme:     th,
+		opts:      opts,
+		keys:      opts.Keymap.Dispatcher(),
+		state:     opts.State,
+		dir:       opts.Dir,
+		rowsCache: &rowsCache{},
 	}
 	m.setFiles(files, nil)
 	if len(files) > 0 {
@@ -263,6 +283,7 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 // files by path; other files start in their default.
 func (m *Model) setFiles(files []diff.ReviewFile, collapsed map[string]bool) {
 	m.files = files
+	m.invalidateRows()
 	paths := make([]string, len(files))
 	m.pathIndex = make(map[string]int, len(files))
 	m.fileCollapsed = make([]bool, len(files))
@@ -522,19 +543,23 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	case actFoldOpen:
 		if m.fileCollapsed[m.fileIdx] {
 			m.fileCollapsed[m.fileIdx] = false
+			m.invalidateRows()
 			m.cursor = m.rowOfLine(0)
 		} else if fi := m.foldAtCursor(); fi >= 0 && !m.foldsOpen[fi] {
 			m.foldsOpen[fi] = true
+			m.invalidateRows()
 			m.cursor = m.rowOfLine(m.files[m.fileIdx].Folds[fi].Start)
 		}
 	case actFoldClose:
 		if fi := m.foldAtCursor(); fi >= 0 && m.foldsOpen[fi] {
 			m.foldsOpen[fi] = false
+			m.invalidateRows()
 			m.cursor = m.rowOfFold(fi)
 		} else if m.files[m.fileIdx].Collapsed() && !m.fileCollapsed[m.fileIdx] && m.cursorLine() == 0 {
 			// The whole file is one fold for deleted and generated
 			// files: zc at the first line collapses it again.
 			m.fileCollapsed[m.fileIdx] = true
+			m.invalidateRows()
 			m.cursor, m.offset = 0, 0
 		}
 	case actFoldsOpenAll, actFoldsCloseAll:
@@ -545,6 +570,7 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		for i := range m.foldsOpen {
 			m.foldsOpen[i] = a == actFoldsOpenAll
 		}
+		m.invalidateRows()
 		m.cursor = m.rowOfLine(old)
 	case actNextHunk, actPrevHunk:
 		dir := 1
@@ -624,6 +650,7 @@ func (m *Model) setUnified(on bool) {
 		return
 	}
 	m.unified = on
+	m.invalidateRows()
 	m.cursor, m.offset = 0, 0
 	m.visual = false
 }
@@ -695,8 +722,7 @@ func (m Model) rowOfHeader(line int) int {
 	return -1
 }
 
-// resetFile resets the per-file view state for the current file and
-// highlights it once.
+// resetFile resets the per-file view state for the current file.
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
 	m.col = 0
@@ -704,38 +730,15 @@ func (m *Model) resetFile() {
 	m.visual = false
 	m.searchMatches = nil
 	m.loadFileComments()
+	m.invalidateRows()
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
-		m.highlights, m.dimmed = nil, nil
+		m.hl = nil
 		return
 	}
 	f := m.files[m.fileIdx]
 	m.foldsOpen = make([]bool, len(f.Folds))
-	m.highlights, m.dimmed = highlightFile(m.theme.Highlighter, f)
-}
-
-// highlightFile highlights a ReviewFile once: the added and context lines
-// come from the whole new-file token stream (so multi-line tokens stay
-// intact), the deleted lines are dimmed and lexed per line.
-func highlightFile(h *theme.Highlighter, f diff.ReviewFile) ([]theme.Line, map[int]theme.Line) {
-	var sb strings.Builder
-	for _, l := range f.Lines {
-		if l.New != 0 {
-			sb.WriteString(l.Text)
-			sb.WriteByte('\n')
-		}
-	}
-	lines := h.Highlight(f.Path, sb.String())
-	dimmed := make(map[int]theme.Line)
-	for i, l := range f.Lines {
-		if l.Kind != diff.Deleted {
-			continue
-		}
-		if d := h.HighlightDim(f.Path, l.Text); len(d) > 0 {
-			dimmed[i] = d[0]
-		}
-	}
-	return lines, dimmed
+	m.hl = newFileHighlights(m.theme.Highlighter, f)
 }
 
 // clamp keeps cursor and offset inside the current rows.
@@ -781,8 +784,21 @@ type row struct {
 
 // rows are the rows of the current view mode for the current file:
 // info entries for binary, mode and submodule changes, a single marker
-// for collapsed files, otherwise the full-file or unified view.
+// for collapsed files, otherwise the full-file or unified view. The
+// result is cached until the file view state changes, because it is
+// needed several times per keystroke and once per frame.
 func (m Model) rows() []row {
+	if m.rowsCache != nil && m.rowsCache.rows != nil {
+		return m.rowsCache.rows
+	}
+	rows := m.buildRows()
+	if m.rowsCache != nil {
+		m.rowsCache.rows = rows
+	}
+	return rows
+}
+
+func (m Model) buildRows() []row {
 	f := m.files[m.fileIdx]
 	switch f.Kind {
 	case diff.KindBinary, diff.KindMode, diff.KindSubmodule:
@@ -1016,6 +1032,7 @@ func (m Model) fileView() string {
 	width := m.contentWidth()
 	var b strings.Builder
 	rows := m.rows()
+	m.hl.ensureRows(rows, m.offset-highlightBuffer, m.offset+m.bodyHeight()+highlightBuffer)
 	if m.wrap {
 		m.renderWrapped(&b, width, len(rows), func(j int) string {
 			r := rows[j]
@@ -1248,16 +1265,46 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 		segs = wordSegments(segs, l.Text, l.Words, bg)
 	}
 
+	num := fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))
 	var b strings.Builder
+	m.renderBody(&b, segs, len(num)+len(marker), cursor)
+	return gutter.Render(num) + markerStyle.Render(marker) + b.String()
+}
+
+// renderBody writes the styled segments of a line body into b, covering
+// only the horizontal window the terminal shows: whole segments left of
+// the horizontal scroll are skipped and the render stops once the
+// window is covered. The caller's ansi.Truncate and TruncateLeft cut
+// the exact cell boundary afterwards, so the output is identical to
+// rendering every segment, but minified lines only cost one window.
+// prefixCells are the cells the body starts at (gutter and marker).
+func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells int, cursor bool) {
+	skip := m.hscroll - prefixCells
+	if skip < 0 {
+		skip = 0
+	}
+	need := m.width
+	if m.wrap {
+		need = m.wrapLimit()
+	}
+	end := skip + need
+	acc := 0
 	for _, s := range segs {
+		w := ansi.StringWidth(s.Text)
+		if acc+w <= skip {
+			acc += w
+			continue
+		}
+		if acc >= end {
+			break
+		}
 		style := s.Style
 		if cursor {
-			style = style.Background(st.Cursor)
+			style = style.Background(m.theme.Styles.Cursor)
 		}
 		b.WriteString(style.Render(s.Text))
+		acc += w
 	}
-	return gutter.Render(fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))) +
-		markerStyle.Render(marker) + b.String()
 }
 
 // washSegments applies the background wash of a changed line to the
@@ -1315,18 +1362,18 @@ func wordSegments(segs []theme.Segment, raw string, words []diff.Word, bg color.
 	return out
 }
 
-// segments returns the syntax segments of a line: from the file highlight
-// cache for added and context lines, from the dimmed cache for deleted
-// lines. Lines without a highlight fall back to plain text.
+// segments returns the syntax segments of a line: from the lazy
+// highlight cache for added and context lines, from the dimmed cache
+// for deleted lines. Lines without a highlight fall back to plain text.
 func (m Model) segments(l diff.Line, idx int) []theme.Segment {
 	var segs []theme.Segment
 	switch l.Kind {
 	case diff.Added, diff.Context:
-		if l.New > 0 && l.New-1 < len(m.highlights) {
-			segs = m.highlights[l.New-1]
+		if l.New > 0 {
+			segs = m.hl.newLine(l.New)
 		}
 	case diff.Deleted:
-		segs = m.dimmed[idx]
+		segs = m.hl.dimLine(idx)
 	}
 	if len(segs) == 0 && l.Text != "" {
 		segs = []theme.Segment{{Text: strings.ReplaceAll(l.Text, "\t", "    ")}}

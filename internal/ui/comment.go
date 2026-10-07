@@ -474,6 +474,7 @@ func (m Model) commentCount() string {
 // global comments for the virtual rows. Orphaned comments of files that
 // left the review count as global ones, so they stay visible.
 func (m *Model) loadFileComments() {
+	m.invalidateRows()
 	m.fileComments = nil
 	m.globalComments = nil
 	if len(m.files) == 0 {

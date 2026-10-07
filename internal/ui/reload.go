@@ -210,6 +210,7 @@ func (m *Model) restore(p place) {
 	if fi := m.foldOfLine(idx); fi >= 0 && p.onLine {
 		m.foldsOpen[fi] = true
 	}
+	m.invalidateRows()
 	m.cursor = m.rowOfLine(idx)
 	m.offset = max(0, m.cursor-p.screenRow)
 	m.jumps[0].line = idx
