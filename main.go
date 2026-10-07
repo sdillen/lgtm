@@ -11,6 +11,7 @@ import (
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
 )
 
@@ -72,7 +73,9 @@ func run(dir string, args []string) error {
 	for i, f := range changes.Files {
 		files[i] = diff.New(f.Path, f.Old, f.New)
 	}
-	_, err = runProgram(ui.New(files, subjectLabel(subj, changes)))
+	// The default dark theme until the theme selection lands.
+	th := theme.Default(theme.KindDark)
+	_, err = runProgram(ui.New(files, subjectLabel(subj, changes), th))
 	return err
 }
 

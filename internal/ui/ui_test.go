@@ -8,8 +8,13 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
 )
+
+// themeFor is the fixed theme of the UI tests: the built-in night theme,
+// so the screens are deterministic.
+var themeFor = theme.Default(theme.KindDark)
 
 var file = diff.ReviewFile{
 	Path: "main.go",
@@ -32,7 +37,7 @@ var big = diff.New("big.go",
 var small = diff.New("small.txt", "x\n", "X\n")
 
 func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 5)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor), 30, 5)
 
 	assertScreen(t, m, []string{
 		"   1    1   package main",
@@ -44,7 +49,7 @@ func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
 }
 
 func TestJAndKMoveTheCursorAndScroll(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 3)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor), 30, 3)
 
 	assertScreen(t, m, []string{
 		"   1    1   package main",
@@ -83,7 +88,7 @@ func TestJAndKMoveTheCursorAndScroll(t *testing.T) {
 }
 
 func TestCountsRepeatAMotion(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	m = press(m, "5", "j")
 	assertScreen(t, m, []string{
@@ -96,7 +101,7 @@ func TestCountsRepeatAMotion(t *testing.T) {
 }
 
 func TestQQuits(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 5)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor), 30, 5)
 
 	_, cmd := m.Update(key("q"))
 
@@ -108,11 +113,73 @@ func TestQQuits(t *testing.T) {
 	}
 }
 
+// TestSyntaxHighlightingColoursAddedAndContextLines pins the acceptance
+// criterion "syntax highlighting for added and unchanged lines": the Go
+// keywords of the added line ("return", "true") and of the context line
+// ("package") carry their token colours in the rendered view.
+func TestSyntaxHighlightingColoursAddedAndContextLines(t *testing.T) {
+	kw := diff.ReviewFile{
+		Path: "kw.go",
+		Lines: []diff.Line{
+			{Kind: diff.Context, Old: 1, New: 1, Text: "package main"},
+			{Kind: diff.Added, New: 2, Text: "return true"},
+		},
+	}
+	m := start(ui.New([]diff.ReviewFile{kw}, "main", themeFor), 30, 5)
+	content := m.View().Content
+
+	// "return" is a Go keyword: #bb9af7 in tokyo night night.
+	if !strings.Contains(content, "38;2;187;154;247") {
+		t.Errorf("view lacks the keyword colour:\n%s", content)
+	}
+	// "true" is a Go constant: #e0af68.
+	if !strings.Contains(content, "38;2;224;175;104") {
+		t.Errorf("view lacks the constant colour:\n%s", content)
+	}
+	// "package" is a Go namespace keyword: #7dcfff.
+	if !strings.Contains(content, "38;2;125;207;255") {
+		t.Errorf("view lacks the namespace colour:\n%s", content)
+	}
+}
+
+// TestDeletedLinesAreSyntaxHighlightedDimmed pins the "dimmed deleted
+// lines" behaviour: "old" is a Go identifier and renders in the name
+// colour #c0caf5 darkened to 55%.
+func TestDeletedLinesAreSyntaxHighlightedDimmed(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor), 30, 5)
+	content := m.View().Content
+
+	if !strings.Contains(content, "38;2;105;111;134") {
+		t.Errorf("view lacks the dimmed name colour:\n%s", content)
+	}
+}
+
+func TestThemeStylesTheStatusLine(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor), 30, 5)
+	content := m.View().Content
+
+	// The status line uses the theme accent #7aa2f7.
+	if !strings.Contains(content, "38;2;122;162;247") {
+		t.Errorf("view lacks the status colour:\n%s", content)
+	}
+}
+
+func TestLightThemeRendersTheDayPalette(t *testing.T) {
+	day := theme.Default(theme.KindLight)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", day), 30, 5)
+	content := m.View().Content
+
+	// The status line uses the day accent #2e7de9.
+	if !strings.Contains(content, "38;2;46;125;233") {
+		t.Errorf("view lacks the day status colour:\n%s", content)
+	}
+}
+
 func TestLongLinesAreCutAtTheTerminalWidth(t *testing.T) {
 	long := diff.ReviewFile{Path: "long.txt", Lines: []diff.Line{
 		{Kind: diff.Added, New: 1, Text: "0123456789abcdef"},
 	}}
-	m := start(ui.New([]diff.ReviewFile{long}, "main"), 20, 2)
+	m := start(ui.New([]diff.ReviewFile{long}, "main", themeFor), 20, 2)
 
 	assertScreen(t, m, []string{
 		"        1 + 01234567",
@@ -124,7 +191,7 @@ func TestTabsAreExpandedToSpaces(t *testing.T) {
 	tabbed := diff.ReviewFile{Path: "t.go", Lines: []diff.Line{
 		{Kind: diff.Context, Old: 1, New: 1, Text: "\tx"},
 	}}
-	m := start(ui.New([]diff.ReviewFile{tabbed}, "main"), 30, 2)
+	m := start(ui.New([]diff.ReviewFile{tabbed}, "main", themeFor), 30, 2)
 
 	assertScreen(t, m, []string{
 		"   1    1       x",
@@ -133,7 +200,7 @@ func TestTabsAreExpandedToSpaces(t *testing.T) {
 }
 
 func TestWithoutChangesShowsHintNamingTheReviewSubject(t *testing.T) {
-	m := start(ui.New(nil, "main..feature"), 30, 5)
+	m := start(ui.New(nil, "main..feature", themeFor), 30, 5)
 
 	m = press(m, "j", "k")
 	assertScreen(t, m, []string{
@@ -146,7 +213,7 @@ func TestWithoutChangesShowsHintNamingTheReviewSubject(t *testing.T) {
 }
 
 func TestWithoutChangesShowsHintWithoutSubject(t *testing.T) {
-	m := start(ui.New(nil, ""), 30, 5)
+	m := start(ui.New(nil, "", themeFor), 30, 5)
 
 	assertScreen(t, m, []string{
 		"Nothing to review.",
@@ -156,7 +223,7 @@ func TestWithoutChangesShowsHintWithoutSubject(t *testing.T) {
 }
 
 func TestUnchangedRunsAreFoldedByDefaultWithLineCounts(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 8)
 
 	assertScreen(t, m, []string{
 		"⋯ 1 unveränderte Zeile ⋯",
@@ -171,7 +238,7 @@ func TestUnchangedRunsAreFoldedByDefaultWithLineCounts(t *testing.T) {
 }
 
 func TestZoOpensTheFoldUnderTheCursor(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 14)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 14)
 
 	// Cursor onto the middle fold marker.
 	m = press(m, "j", "j", "j")
@@ -195,7 +262,7 @@ func TestZoOpensTheFoldUnderTheCursor(t *testing.T) {
 }
 
 func TestZcClosesTheFoldUnderTheCursor(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 8)
 
 	// Open the middle fold, then close it again.
 	m = press(m, "j", "j", "j", "z", "o", "z", "c")
@@ -212,7 +279,7 @@ func TestZcClosesTheFoldUnderTheCursor(t *testing.T) {
 }
 
 func TestZROpensAllFoldsAndZMClosesAll(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 23)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 23)
 
 	m = press(m, "z", "R")
 	assertScreen(t, m, []string{
@@ -243,7 +310,7 @@ func TestZROpensAllFoldsAndZMClosesAll(t *testing.T) {
 }
 
 func TestZMClosesAllFolds(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 8)
 
 	m = press(m, "z", "M")
 	assertScreen(t, m, []string{
@@ -259,7 +326,7 @@ func TestZMClosesAllFolds(t *testing.T) {
 }
 
 func TestUnifiedToggleShowsTheClassicDiff(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 17)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 17)
 
 	m = press(m, "u")
 	assertScreen(t, m, []string{
@@ -284,7 +351,7 @@ func TestUnifiedToggleShowsTheClassicDiff(t *testing.T) {
 }
 
 func TestUnifiedToggleBackToTheFullFileView(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 8)
 
 	m = press(m, "u", "u")
 	assertScreen(t, m, []string{
@@ -300,7 +367,7 @@ func TestUnifiedToggleBackToTheFullFileView(t *testing.T) {
 }
 
 func TestBracketCJumpsBetweenHunks(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	m = press(m, "]", "c")
 	assertScreen(t, m, []string{
@@ -341,7 +408,7 @@ func TestBracketCJumpsBetweenHunks(t *testing.T) {
 }
 
 func TestBracketFJumpsBetweenFiles(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big, small}, "main"), 40, 3)
+	m := start(ui.New([]diff.ReviewFile{big, small}, "main", themeFor), 40, 3)
 
 	m = press(m, "]", "f")
 	assertScreen(t, m, []string{
@@ -359,7 +426,7 @@ func TestBracketFJumpsBetweenFiles(t *testing.T) {
 }
 
 func TestCtrlDMovesDownHalfAPageAndCtrlUBack(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	// The window scrolls half a page down, the cursor stays on its
 	// screen row.
@@ -401,7 +468,7 @@ func TestCtrlDMovesDownHalfAPageAndCtrlUBack(t *testing.T) {
 }
 
 func TestGgGoesToTheFirstLineAndGToTheLast(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	m = press(m, "G")
 	assertScreen(t, m, []string{
@@ -423,7 +490,7 @@ func TestGgGoesToTheFirstLineAndGToTheLast(t *testing.T) {
 }
 
 func TestZtPutsTheCursorAtTheTopAndZzCentersIt(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 7)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 7)
 
 	// Unfold everything and move the cursor onto the second hunk, then
 	// put it at the top of the screen.
@@ -457,7 +524,7 @@ func BenchmarkViewLargeFile(b *testing.B) {
 	large := diff.New("big.txt",
 		strings.Repeat("a line of context\n", 5000),
 		strings.Repeat("a line of context\n", 5000)+"new line\n")
-	m := start(ui.New([]diff.ReviewFile{large}, "main"), 120, 40)
+	m := start(ui.New([]diff.ReviewFile{large}, "main", themeFor), 120, 40)
 	m = press(m, "z", "R")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -466,7 +533,7 @@ func BenchmarkViewLargeFile(b *testing.B) {
 }
 
 func TestHunkJumpInUnifiedModeMovesBetweenSections(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 4)
 
 	m = press(m, "u", "]", "c")
 	assertScreen(t, m, []string{
@@ -486,7 +553,7 @@ func TestHunkJumpInUnifiedModeMovesBetweenSections(t *testing.T) {
 }
 
 func TestBracketCInsideASectionReturnsToItsHeader(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 4)
 
 	// Jump to the second section, move onto its lines, then [c must
 	// land on the current section's header, not the previous one.
@@ -500,7 +567,7 @@ func TestBracketCInsideASectionReturnsToItsHeader(t *testing.T) {
 }
 
 func TestCountRepeatsHunkJumps(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	// Two hunks exist, so a count of three lands on the last one.
 	m = press(m, "3", "]", "c")
@@ -514,7 +581,7 @@ func TestCountRepeatsHunkJumps(t *testing.T) {
 }
 
 func TestCountRepeatsFileJumps(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big, small}, "main"), 40, 3)
+	m := start(ui.New([]diff.ReviewFile{big, small}, "main", themeFor), 40, 3)
 
 	m = press(m, "2", "]", "f")
 	assertScreen(t, m, []string{
@@ -525,7 +592,7 @@ func TestCountRepeatsFileJumps(t *testing.T) {
 }
 
 func TestCountedGJumpsToTheFileLine(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	m = press(m, "z", "R", "5", "G")
 	assertScreen(t, m, []string{
@@ -538,7 +605,7 @@ func TestCountedGJumpsToTheFileLine(t *testing.T) {
 }
 
 func TestCountedGInUnifiedModeSnapsToTheNextVisibleLine(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 4)
 
 	// Line 7 is the first visible line of the second section; line 6
 	// is not shown in the unified view.
@@ -552,7 +619,7 @@ func TestCountedGInUnifiedModeSnapsToTheNextVisibleLine(t *testing.T) {
 }
 
 func TestCountedZzCentersAndCountedZtShowsTheLineAtTheTop(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor), 40, 5)
 
 	m = press(m, "z", "R", "5", "z", "z")
 	assertScreen(t, m, []string{

@@ -6,6 +6,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,16 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-)
-
-var (
-	addedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a"))
-	deletedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
-	gutterStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
-	statusStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7"))
-	foldStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
-	hunkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
-	cursorBG     = lipgloss.Color("#2f334d")
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 )
 
 // contextWindow is how many unchanged lines surround each hunk in the
@@ -32,10 +24,12 @@ const contextWindow = 3
 // Model is the review view: one file at a time, with folds for the
 // unchanged runs of the full-file view and a toggleable unified view.
 // label names the review subject and appears in the hint when there is
-// nothing to review.
+// nothing to review. theme provides the semantic styles and the syntax
+// highlighter.
 type Model struct {
 	files     []diff.ReviewFile
 	label     string
+	theme     theme.Theme
 	width     int
 	height    int
 	fileIdx   int
@@ -45,11 +39,18 @@ type Model struct {
 	unified   bool   // show the classic unified diff instead of the full file
 	pending   string // prefix key ("g", "z", "]", "[") waiting for its second key
 	count     int    // pending count for j, k, ctrl-d, ctrl-u
+
+	// highlights are the syntax segments of the new-file content, one
+	// entry per line (indexed by new line number - 1). dimmed holds the
+	// dimmed segments of the deleted lines, keyed by line index.
+	highlights []theme.Line
+	dimmed     map[int]theme.Line
 }
 
-// New returns a Model showing files of the review subject label.
-func New(files []diff.ReviewFile, label string) Model {
-	m := Model{files: files, label: label}
+// New returns a Model showing files of the review subject label with the
+// given theme.
+func New(files []diff.ReviewFile, label string, th theme.Theme) Model {
+	m := Model{files: files, label: label, theme: th}
 	m.resetFile()
 	return m
 }
@@ -262,15 +263,43 @@ func (m Model) rowOfHeader(line int) int {
 	return -1
 }
 
-// resetFile resets the per-file view state for the current file.
+// resetFile resets the per-file view state for the current file and
+// highlights it once.
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
 	m.pending, m.count = "", 0
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
+		m.highlights, m.dimmed = nil, nil
 		return
 	}
-	m.foldsOpen = make([]bool, len(m.files[m.fileIdx].Folds))
+	f := m.files[m.fileIdx]
+	m.foldsOpen = make([]bool, len(f.Folds))
+	m.highlights, m.dimmed = highlightFile(m.theme.Highlighter, f)
+}
+
+// highlightFile highlights a ReviewFile once: the added and context lines
+// come from the whole new-file token stream (so multi-line tokens stay
+// intact), the deleted lines are dimmed and lexed per line.
+func highlightFile(h *theme.Highlighter, f diff.ReviewFile) ([]theme.Line, map[int]theme.Line) {
+	var sb strings.Builder
+	for _, l := range f.Lines {
+		if l.New != 0 {
+			sb.WriteString(l.Text)
+			sb.WriteByte('\n')
+		}
+	}
+	lines := h.Highlight(f.Path, sb.String())
+	dimmed := make(map[int]theme.Line)
+	for i, l := range f.Lines {
+		if l.Kind != diff.Deleted {
+			continue
+		}
+		if d := h.HighlightDim(f.Path, l.Text); len(d) > 0 {
+			dimmed[i] = d[0]
+		}
+	}
+	return lines, dimmed
 }
 
 // clamp keeps cursor and offset inside the current rows.
@@ -480,26 +509,26 @@ func (m Model) statusLine() string {
 	if m.unified {
 		parts = append(parts, "[unified]")
 	}
-	return statusStyle.Render(strings.Join(parts, "  "))
+	return m.theme.Styles.Status.Render(strings.Join(parts, "  "))
 }
 
 // renderRow renders one row of the current file, highlighting the cursor.
 func (m Model) renderRow(r row, cursor bool) string {
 	if r.header != "" {
-		style := hunkStyle
+		style := m.theme.Styles.Hunk
 		if cursor {
-			style = style.Background(cursorBG)
+			style = style.Background(m.theme.Styles.Cursor)
 		}
 		return style.Render(r.header)
 	}
 	if r.fold >= 0 {
-		style := foldStyle
+		style := m.theme.Styles.Fold
 		if cursor {
-			style = style.Background(cursorBG)
+			style = style.Background(m.theme.Styles.Cursor)
 		}
 		return style.Render(foldText(m.files[m.fileIdx].Folds[r.fold].Count()))
 	}
-	return renderLine(m.files[m.fileIdx].Lines[r.line], cursor)
+	return m.renderLine(m.files[m.fileIdx].Lines[r.line], r.line, cursor)
 }
 
 // foldText is the marker of a collapsed unchanged run.
@@ -515,30 +544,64 @@ func (m Model) bodyHeight() int {
 	return max(0, m.height-1)
 }
 
-func renderLine(l diff.Line, cursor bool) string {
-	text := strings.ReplaceAll(l.Text, "\t", "    ")
-	gutter := gutterStyle
+// renderLine renders one line of the current file: gutter, marker and the
+// syntax-highlighted body. Added and context lines come from the file's
+// highlight cache, deleted lines are the dimmed per-line highlight. The
+// wash backgrounds of changed lines and the cursor background are applied
+// on top of the token styles.
+func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
+	st := m.theme.Styles
+	gutter := st.Gutter
 	if cursor {
-		gutter = gutter.Background(cursorBG)
+		gutter = gutter.Background(st.Cursor)
 	}
-	marker, body := "   ", text
+
+	marker, markerStyle, wash := "   ", lipgloss.Style{}, color.Color(nil)
 	switch l.Kind {
 	case diff.Added:
-		marker = " + "
-		style := addedStyle
-		if cursor {
-			style = style.Background(cursorBG)
-		}
-		body = style.Render(text)
+		marker, markerStyle, wash = " + ", st.Added, st.AddedBG
 	case diff.Deleted:
-		marker = " - "
-		style := deletedStyle
-		if cursor {
-			style = style.Background(cursorBG)
-		}
-		body = style.Render(text)
+		marker, markerStyle, wash = " - ", st.Deleted, st.DeletedBG
 	}
-	return gutter.Render(fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))) + marker + body
+	if wash != nil {
+		markerStyle = markerStyle.Background(wash)
+	}
+	if cursor {
+		markerStyle = markerStyle.Background(st.Cursor)
+	}
+
+	var b strings.Builder
+	for _, s := range m.segments(l, idx) {
+		style := s.Style
+		if wash != nil {
+			style = style.Background(wash)
+		}
+		if cursor {
+			style = style.Background(st.Cursor)
+		}
+		b.WriteString(style.Render(s.Text))
+	}
+	return gutter.Render(fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))) +
+		markerStyle.Render(marker) + b.String()
+}
+
+// segments returns the syntax segments of a line: from the file highlight
+// cache for added and context lines, from the dimmed cache for deleted
+// lines. Lines without a highlight fall back to plain text.
+func (m Model) segments(l diff.Line, idx int) []theme.Segment {
+	var segs []theme.Segment
+	switch l.Kind {
+	case diff.Added, diff.Context:
+		if l.New > 0 && l.New-1 < len(m.highlights) {
+			segs = m.highlights[l.New-1]
+		}
+	case diff.Deleted:
+		segs = m.dimmed[idx]
+	}
+	if len(segs) == 0 && l.Text != "" {
+		segs = []theme.Segment{{Text: strings.ReplaceAll(l.Text, "\t", "    ")}}
+	}
+	return segs
 }
 
 func lineNum(n int) string {
