@@ -81,42 +81,104 @@ func (h *Highlighter) HighlightDim(path, text string) []Line {
 	return h.highlight(path, text, true)
 }
 
+// Stream lexes text lazily with the lexer for path: the caller pulls
+// one Line at a time, so highlighting a huge file stops after the
+// lines that are actually needed. One stream covers the whole text, so
+// multi-line tokens (block comments, raw strings) stay consistent
+// across pulls.
+type Stream struct {
+	it   chroma.Iterator
+	h    *Highlighter
+	dim  bool
+	done bool
+
+	// pending holds the parts of tokens that span a line boundary:
+	// everything after the newline that ended the previous line.
+	pending []part
+}
+
+// part is one piece of a token value, possibly ending in a newline.
+type part struct {
+	text  string
+	style lipgloss.Style
+}
+
+// Stream returns a lazy token stream of text, highlighted like
+// Highlight. Next yields one Line per text line in order; lines the
+// lexer produced no tokens for come back without segments.
+func (h *Highlighter) Stream(path, text string) *Stream {
+	return h.stream(path, text, false)
+}
+
+func (h *Highlighter) stream(path, text string, dim bool) *Stream {
+	it, err := h.lexerFor(path).Tokenise(nil, text)
+	if err != nil {
+		it = func() chroma.Token { return chroma.EOF }
+	}
+	return &Stream{it: it, h: h, dim: dim}
+}
+
+// Next returns the next line of the text, or ok=false when the stream
+// is exhausted. It is safe to stop pulling early: nothing beyond the
+// pulled lines is lexed.
+func (s *Stream) Next() (Line, bool) {
+	if s.done {
+		return nil, false
+	}
+	var cur Line
+	for {
+		if len(s.pending) == 0 && !s.pull() {
+			return cur, cur != nil
+		}
+		p := s.pending[0]
+		s.pending = s.pending[1:]
+		text := strings.TrimSuffix(p.text, "\n")
+		if text != "" {
+			cur = append(cur, Segment{Text: expandTabs(text), Style: p.style})
+		}
+		if strings.HasSuffix(p.text, "\n") {
+			return cur, true
+		}
+	}
+}
+
+// pull lexes the next token and queues its parts; ok reports whether
+// the stream has more input.
+func (s *Stream) pull() bool {
+	for {
+		tok := s.it()
+		if tok == chroma.EOF {
+			s.done = true
+			return false
+		}
+		if tok.Value == "" {
+			continue
+		}
+		entry := s.h.derived.Get(tok.Type)
+		if s.dim {
+			entry = dimEntry(entry)
+		}
+		style := s.h.styleOf(entry)
+		for _, p := range strings.SplitAfter(tok.Value, "\n") {
+			s.pending = append(s.pending, part{text: p, style: style})
+		}
+		return true
+	}
+}
+
 func (h *Highlighter) highlight(path, text string, dim bool) []Line {
 	if text == "" {
 		return nil
 	}
-	it, err := h.lexerFor(path).Tokenise(nil, text)
-	if err != nil {
-		return nil
-	}
+	s := h.stream(path, text, dim)
 	var lines []Line
-	cur := 0
-	for tok := it(); tok != chroma.EOF; tok = it() {
-		if tok.Value == "" {
-			continue
+	for {
+		line, ok := s.Next()
+		if !ok {
+			return lines
 		}
-		entry := h.derived.Get(tok.Type)
-		if dim {
-			entry = dimEntry(entry)
-		}
-		style := h.styleOf(entry)
-		for _, part := range strings.SplitAfter(tok.Value, "\n") {
-			newline := strings.HasSuffix(part, "\n")
-			if newline {
-				part = strings.TrimSuffix(part, "\n")
-			}
-			if part != "" {
-				for len(lines) <= cur {
-					lines = append(lines, nil)
-				}
-				lines[cur] = append(lines[cur], Segment{Text: expandTabs(part), Style: style})
-			}
-			if newline {
-				cur++
-			}
-		}
+		lines = append(lines, line)
 	}
-	return lines
 }
 
 // lexerFor returns the coalesced lexer for a path, falling back to plain

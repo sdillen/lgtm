@@ -28,6 +28,62 @@ func lineText(l theme.Line) string {
 	return b.String()
 }
 
+func TestStreamYieldsOneLineAtATime(t *testing.T) {
+	th := theme.Default(theme.KindDark)
+	s := th.Highlighter.Stream("main.go", goSrc)
+
+	var got []string
+	for {
+		line, ok := s.Next()
+		if !ok {
+			break
+		}
+		got = append(got, lineText(line))
+	}
+	want := []string{
+		"package main", "", "// comment", "func main() {", "    return", "}",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("stream lines = %q, want %q", got, want)
+	}
+	// The stream is exhausted: further pulls stay empty.
+	if line, ok := s.Next(); ok {
+		t.Errorf("stream after EOF returned %q", lineText(line))
+	}
+}
+
+// TestStreamKeepsMultilineTokensAcrossPulls pins that one stream lexes
+// the whole text: a block comment opened before the first pull stays
+// comment-coloured on the lines pulled later. A per-line lexer would
+// break this.
+func TestStreamKeepsMultilineTokensAcrossPulls(t *testing.T) {
+	th := theme.Default(theme.KindDark)
+	src := "func f() {\n/* block\ncomment */\nreturn\n}\n"
+	s := th.Highlighter.Stream("main.go", src)
+
+	// Pull only the lines of the comment; the stream must still know
+	// that the comment opened on line 2.
+	if _, ok := s.Next(); !ok {
+		t.Fatal("stream ended early")
+	}
+	comment := []theme.Line{}
+	for len(comment) < 2 {
+		line, ok := s.Next()
+		if !ok {
+			t.Fatal("stream ended inside the comment")
+		}
+		comment = append(comment, line)
+	}
+	// Both pulled lines are comment-coloured, like the whole-text
+	// highlight of the same source.
+	want := "65;72;104" // CommentSingle #414868 in the night theme
+	for i, line := range comment {
+		if got := renderLine(line); !strings.Contains(got, want) {
+			t.Errorf("comment line %d renders %q, want the comment colour", i+1, got)
+		}
+	}
+}
+
 func TestHighlightSplitsTokensIntoSegmentsPerLine(t *testing.T) {
 	lines := highlight(t, goSrc)
 
