@@ -160,6 +160,153 @@ func TestReviewMarkdownListsOnlyOpenComments(t *testing.T) {
 	}
 }
 
+// TestAnchorKindsSurviveSaveAndLoad pins the persisted anchor of every
+// comment kind: deleted-line comments remember that they live in the old
+// file state, file comments carry no line range and global comments no
+// path.
+func TestAnchorKindsSurviveSaveAndLoad(t *testing.T) {
+	dir := t.TempDir()
+	s := review.NewState()
+	deleted := s.AddComment(review.Comment{Path: "a.go", Start: 4, End: 4, Old: true, Quote: "gone", Text: "why removed?"})
+	file := s.AddComment(review.Comment{Path: "a.go", Text: "restructure this file"})
+	global := s.AddComment(review.Comment{Text: "nice work overall"})
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := review.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := restored.Comments()
+	if len(got) != 3 {
+		t.Fatalf("restored %d comments, want 3", len(got))
+	}
+	if got[0] != deleted || got[1] != file || got[2] != global {
+		t.Errorf("restored comments differ:\n%+v\n%+v\n%+v", got[0], got[1], got[2])
+	}
+}
+
+// TestUpdateCommentReplacesTextAndCategory pins the edit flow: the text
+// and category are replaced, the anchor, quote, id and status stay, and
+// an unknown id is reported.
+func TestUpdateCommentReplacesTextAndCategory(t *testing.T) {
+	s := review.NewState()
+	c := s.AddComment(review.Comment{Path: "a.go", Start: 2, End: 2, Quote: "old", Category: review.Should, Text: "rename"})
+
+	got, ok := s.UpdateComment(c.ID, "rename to load", review.Must)
+	if !ok {
+		t.Fatal("UpdateComment did not find the comment")
+	}
+	if got.Text != "rename to load" || got.Category != review.Must ||
+		got.Start != 2 || got.Quote != "old" || got.Status != review.Open || got.ID != c.ID {
+		t.Errorf("updated comment = %+v", got)
+	}
+	if _, ok := s.UpdateComment("nope", "x", review.Must); ok {
+		t.Error("UpdateComment accepted an unknown id")
+	}
+}
+
+// TestDeleteCommentRemovesIt pins that a deleted comment is gone from
+// the state and from the persisted file, and that deleting twice is
+// reported as not found.
+func TestDeleteCommentRemovesIt(t *testing.T) {
+	dir := t.TempDir()
+	s := review.NewState()
+	keep := s.AddComment(review.Comment{Path: "a.go", Start: 1, Text: "keep"})
+	drop := s.AddComment(review.Comment{Path: "b.go", Start: 1, Text: "drop"})
+	if !s.DeleteComment(drop.ID) {
+		t.Fatal("DeleteComment did not find the comment")
+	}
+	if s.DeleteComment(drop.ID) {
+		t.Error("DeleteComment removed the comment twice")
+	}
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := review.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := restored.Comments()
+	if len(got) != 1 || got[0] != keep {
+		t.Errorf("comments after delete = %+v, want only %+v", got, keep)
+	}
+}
+
+// TestSetCommentStatusMarksDone pins the done marking: the status is
+// persisted and the comment leaves the open list the prompt and
+// review.md use.
+func TestSetCommentStatusMarksDone(t *testing.T) {
+	dir := t.TempDir()
+	s := review.NewState()
+	c := s.AddComment(review.Comment{Path: "a.go", Start: 1, Text: "fix"})
+
+	got, ok := s.SetCommentStatus(c.ID, review.Done)
+	if !ok {
+		t.Fatal("SetCommentStatus did not find the comment")
+	}
+	if got.Status != review.Done {
+		t.Errorf("status = %q, want %q", got.Status, review.Done)
+	}
+	if n := len(s.OpenComments()); n != 0 {
+		t.Errorf("%d open comments after marking done, want 0", n)
+	}
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := review.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restored.Comments(); len(got) != 1 || got[0].Status != review.Done {
+		t.Errorf("restored = %+v, want the done comment", got)
+	}
+}
+
+// TestLocationNamesEveryAnchorKind pins the location strings of
+// review.md, the prompt and the float title for all anchor kinds: a line
+// range, a single line, a deleted line in the old state, a whole file
+// and the whole review.
+func TestLocationNamesEveryAnchorKind(t *testing.T) {
+	tests := []struct {
+		c    review.Comment
+		want string
+	}{
+		{review.Comment{Path: "main.go", Start: 3, End: 5}, "main.go:3-5"},
+		{review.Comment{Path: "main.go", Start: 4, End: 4}, "main.go:4"},
+		{review.Comment{Path: "main.go", Start: 7, End: 7, Old: true}, "main.go:7 (alt, entfernt)"},
+		{review.Comment{Path: "main.go"}, "main.go (Datei)"},
+		{review.Comment{}, "global"},
+	}
+	for _, tt := range tests {
+		if got := tt.c.Location(); got != tt.want {
+			t.Errorf("Location(%+v) = %q, want %q", tt.c, got, tt.want)
+		}
+	}
+}
+
+// TestReviewMarkdownRendersEveryAnchorKind pins the review.md contract
+// for the anchor kinds of this issue: global comments first under their
+// own heading, file comments with the (Datei) marker, deleted-line
+// comments with their old line and the (alt, entfernt) marker, and no
+// code quote for file and global comments.
+func TestReviewMarkdownRendersEveryAnchorKind(t *testing.T) {
+	dir := t.TempDir()
+	s := review.NewState()
+	s.AddComment(review.Comment{Path: "main.go", Start: 1, End: 1, Category: review.Should, Quote: "package main", Text: "Context note."})
+	s.AddComment(review.Comment{Path: "main.go", Start: 2, End: 2, Old: true, Category: review.Must, Quote: "old", Text: "Do not remove this."})
+	s.AddComment(review.Comment{Path: "main.go", Category: review.Nit, Text: "Split this file."})
+	s.AddComment(review.Comment{Category: review.Question, Text: "Is the approach right overall?"})
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	assertGolden(t, "review-anchors.md", readReviewMD(t, dir))
+}
+
 // TestCategoryNextCyclesFromTheDefault pins the <Tab> order of the
 // comment float: should (the default) → must → nit → question → should.
 func TestCategoryNextCyclesFromTheDefault(t *testing.T) {

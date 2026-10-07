@@ -9,13 +9,15 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 )
 
-// markdown renders the open comments as review.md for the agent: grouped
-// by file in path order, each comment with its location, category,
-// quoted code and text, in line order.
+// markdown renders the open comments as review.md for the agent: global
+// comments first, then the files in path order with the file comments
+// before the line comments, each comment with its location, category,
+// quoted code and text. Done comments are not exported.
 func (s *State) markdown() string {
 	open := s.OpenComments()
 	// The stable sort keeps comments on the same lines in the order
-	// they were added.
+	// they were added. Global comments (path "") sort first, file
+	// comments (start 0) before the line comments of their file.
 	slices.SortStableFunc(open, func(a, b Comment) int {
 		return cmp.Or(
 			strings.Compare(a.Path, b.Path),
@@ -32,15 +34,26 @@ func (s *State) markdown() string {
 	}
 	for i, c := range open {
 		if i == 0 || c.Path != open[i-1].Path {
-			fmt.Fprintf(&b, "\n## %s\n", c.Path)
+			fmt.Fprintf(&b, "\n## %s\n", sectionName(c.Path))
 		}
-		fmt.Fprintf(&b, "\n### %s:%s (%s)\n\n", c.Path, lineRange(c.Start, c.End), c.Category)
-		fence := codeFence(c.Quote)
-		fmt.Fprintf(&b, "%s%s\n%s\n%s\n\n", fence, languageTag(c.Path), c.Quote, fence)
+		fmt.Fprintf(&b, "\n### %s (%s)\n\n", c.Location(), c.Category)
+		if c.Quote != "" {
+			fence := codeFence(c.Quote)
+			fmt.Fprintf(&b, "%s%s\n%s\n%s\n\n", fence, languageTag(c.Path), c.Quote, fence)
+		}
 		b.WriteString(strings.TrimRight(c.Text, "\n"))
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// sectionName is the heading of a comment group in review.md: the path,
+// or "global" for the comments on the whole review.
+func sectionName(path string) string {
+	if path == "" {
+		return "global"
+	}
+	return path
 }
 
 // lineRange formats a line range as "start-end", a single line as

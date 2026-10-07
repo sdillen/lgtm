@@ -3,6 +3,7 @@ package review
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"slices"
 )
 
@@ -36,17 +37,28 @@ type Status string
 // Open comments are still to be addressed by the agent.
 const Open Status = "open"
 
-// Comment is a reviewer's note anchored to a line range of a file in the
-// new state of the review.
+// Done comments were ticked off by the reviewer; they stay visible in
+// the review but are not exported.
+const Done Status = "done"
+
+// Comment is a reviewer's note. It is anchored to a line range of a file
+// in the new state of the review, to a line range of the old state
+// (deleted lines, Old is true), to a whole file (no line range) or to
+// the whole review (no path).
 type Comment struct {
 	// ID is stable for the life of the comment.
 	ID string `json:"id"`
-	// Path is the file the comment belongs to.
+	// Path is the file the comment belongs to; "" for a comment on
+	// the whole review.
 	Path string `json:"path"`
-	// Start and End are the 1-based, inclusive line range in the new
-	// file content.
+	// Start and End are the 1-based, inclusive line range; 0 for file
+	// and global comments. For Old comments they number the old file
+	// content, otherwise the new one.
 	Start int `json:"start"`
 	End   int `json:"end"`
+	// Old reports that the anchor lives in the old file content: the
+	// commented lines were deleted.
+	Old bool `json:"old,omitempty"`
 	// Quote is the commented code, so the anchor can be found again.
 	Quote    string   `json:"quote"`
 	Category Category `json:"category"`
@@ -78,6 +90,62 @@ func (s *State) OpenComments() []Comment {
 		}
 	}
 	return open
+}
+
+// UpdateComment replaces the editable fields of the comment with id: the
+// text and the category. The anchor, quote and status are unchanged.
+// ok is false when there is no comment with id.
+func (s *State) UpdateComment(id, text string, category Category) (Comment, bool) {
+	for i := range s.CommentList {
+		if s.CommentList[i].ID == id {
+			s.CommentList[i].Text = text
+			s.CommentList[i].Category = category
+			return s.CommentList[i], true
+		}
+	}
+	return Comment{}, false
+}
+
+// DeleteComment removes the comment with id and reports whether it
+// existed.
+func (s *State) DeleteComment(id string) bool {
+	for i, c := range s.CommentList {
+		if c.ID == id {
+			s.CommentList = append(s.CommentList[:i], s.CommentList[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// SetCommentStatus sets the status of the comment with id and returns
+// the updated comment; ok is false when there is no comment with id.
+func (s *State) SetCommentStatus(id string, status Status) (Comment, bool) {
+	for i := range s.CommentList {
+		if s.CommentList[i].ID == id {
+			s.CommentList[i].Status = status
+			return s.CommentList[i], true
+		}
+	}
+	return Comment{}, false
+}
+
+// Location names the anchor of the comment for review.md, the prompt
+// and the float title: "path:start-end" on new lines, "path:line (alt,
+// entfernt)" on deleted lines, "path (Datei)" for a whole file and
+// "global" for the whole review.
+func (c Comment) Location() string {
+	if c.Path == "" {
+		return "global"
+	}
+	if c.Start == 0 && c.End == 0 {
+		return c.Path + " (Datei)"
+	}
+	loc := fmt.Sprintf("%s:%s", c.Path, lineRange(c.Start, c.End))
+	if c.Old {
+		loc += " (alt, entfernt)"
+	}
+	return loc
 }
 
 // newID returns a random comment id.
