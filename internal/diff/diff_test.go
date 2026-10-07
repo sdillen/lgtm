@@ -7,10 +7,10 @@ import (
 )
 
 func TestFullFileShowsWholeNewFileWithChangesInPlace(t *testing.T) {
-	old := "a\nb\nc\nd\n"
-	new := "a\nB\nc\nd\ne\n"
+	before := "a\nb\nc\nd\n"
+	after := "a\nB\nc\nd\ne\n"
 
-	got := diff.New("f.txt", old, new)
+	got := diff.New("f.txt", before, after)
 
 	want := []diff.Line{
 		{Kind: diff.Context, Old: 1, New: 1, Text: "a"},
@@ -52,6 +52,16 @@ func TestDeletedFileConsistsOfDeletedLines(t *testing.T) {
 	assertLines(t, got, []diff.Line{
 		{Kind: diff.Deleted, Old: 1, Text: "x"},
 		{Kind: diff.Deleted, Old: 2, Text: "y"},
+	})
+}
+
+func TestMissingNewlineAtEndOfFileIsAChange(t *testing.T) {
+	got := diff.New("f.txt", "a\nb", "a\nb\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Context, Old: 1, New: 1, Text: "a"},
+		{Kind: diff.Deleted, Old: 2, Text: "b"},
+		{Kind: diff.Added, New: 2, Text: "b"},
 	})
 }
 

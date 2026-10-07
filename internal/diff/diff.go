@@ -33,29 +33,34 @@ type ReviewFile struct {
 	Lines []Line
 }
 
-// New computes the ReviewFile for path from its old and new content. An
-// empty old (new) content stands for an added (deleted) file.
-func New(path, old, new string) ReviewFile {
-	edits := zdiff.Edits(splitLines(old), splitLines(new))
+// New computes the ReviewFile for path from the content before and after the
+// change. An empty before (after) stands for an added (deleted) file.
+func New(path, before, after string) ReviewFile {
+	edits := zdiff.Edits(splitLines(before), splitLines(after))
 	lines := make([]Line, 0, len(edits))
 	for _, e := range edits {
 		switch e.Op {
 		case zdiff.Match:
-			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: e.X})
+			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: trimEOL(e.X)})
 		case zdiff.Delete:
-			lines = append(lines, Line{Kind: Deleted, Old: e.PosX + 1, Text: e.X})
+			lines = append(lines, Line{Kind: Deleted, Old: e.PosX + 1, Text: trimEOL(e.X)})
 		case zdiff.Insert:
-			lines = append(lines, Line{Kind: Added, New: e.PosY + 1, Text: e.Y})
+			lines = append(lines, Line{Kind: Added, New: e.PosY + 1, Text: trimEOL(e.Y)})
 		}
 	}
 	return ReviewFile{Path: path, Lines: lines}
 }
 
-// splitLines splits content into lines without their terminators. A final
-// line terminator does not start another line.
+// splitLines splits content into lines that keep their terminator, so a
+// last line without newline differs from the same line with one.
 func splitLines(content string) []string {
-	if content == "" {
-		return nil
+	lines := strings.SplitAfter(content, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
-	return strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	return lines
+}
+
+func trimEOL(line string) string {
+	return strings.TrimSuffix(line, "\n")
 }
