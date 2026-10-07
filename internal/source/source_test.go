@@ -1,6 +1,7 @@
 package source_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -356,5 +357,46 @@ func assertFiles(t *testing.T, got source.Changes, want []source.File) {
 		if got.Files[i] != want[i] {
 			t.Errorf("file %d = %+v, want %+v", i, got.Files[i], want[i])
 		}
+	}
+}
+
+// TestWorktreeDirNamesTheWorkingTreeRoot pins the directory the review
+// state persists to: the root of the working tree, not the directory the
+// program was started in.
+func TestWorktreeDirNamesTheWorkingTreeRoot(t *testing.T) {
+	f := newDiskFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+
+	src, err := source.Open(f.wt.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := src.WorktreeDir()
+	if root == "" {
+		t.Fatal("WorktreeDir is empty")
+	}
+	fi, err := os.Stat(filepath.Join(root, "a.txt"))
+	if err != nil {
+		t.Fatalf("WorktreeDir %q is not the worktree root: %v", root, err)
+	}
+	if !fi.Mode().IsRegular() {
+		t.Errorf("%s is not a regular file", filepath.Join(root, "a.txt"))
+	}
+}
+
+// TestWorktreeDirWorksFromASubdirectory pins that opening the repository
+// from a subdirectory still yields the worktree root.
+func TestWorktreeDirWorksFromASubdirectory(t *testing.T) {
+	f := newDiskFixture(t, "main")
+	f.write("sub/a.txt", "a\n")
+	f.commit("base")
+
+	src, err := source.Open(f.wt.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := src.WorktreeDir(), f.wt.Root(); got != want {
+		t.Errorf("WorktreeDir = %q, want %q", got, want)
 	}
 }

@@ -62,6 +62,16 @@ func New(repo *git.Repository) *Source {
 	return &Source{repo: repo}
 }
 
+// WorktreeDir returns the root directory of the working tree, "" when
+// the repository has none. The review state lives there, in .lgtm/.
+func (s *Source) WorktreeDir() string {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return ""
+	}
+	return wt.Filesystem().Root()
+}
+
 // Default resolves the default review subject: everything from the merge
 // base of HEAD and the default branch up to the working tree, i.e. commits
 // and uncommitted changes together.
