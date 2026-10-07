@@ -55,12 +55,26 @@ func (f Fold) Count() int { return f.End - f.Start }
 
 // ReviewFile is the full-file view of one changed file: the whole new file
 // with deleted lines inline at their original position, plus the hunks and
-// folds derived from it.
+// folds derived from it. Kind classifies how the file is presented; the
+// kind-specific data (sizes, modes, hashes) sits in the dedicated fields.
+// old and new keep the contents the view was computed from, so the UI can
+// recompute it with whitespace-only changes hidden.
 type ReviewFile struct {
-	Path  string
-	Lines []Line
-	Hunks []Hunk
-	Folds []Fold
+	Path    string
+	OldPath string // rename source, "" when the file was not renamed
+	Kind    FileKind
+	Lines   []Line
+	Hunks   []Hunk
+	Folds   []Fold
+
+	// OldSize and NewSize are the sizes of a binary file, in bytes.
+	OldSize, NewSize int64
+	// OldMode and NewMode are the file modes of a mode-only change.
+	OldMode, NewMode uint32
+	// OldSub and NewSub are the commit hashes of a submodule change.
+	OldSub, NewSub string
+
+	old, new string
 }
 
 // Section is one hunk of the classic unified diff view: a maximal run of
@@ -110,14 +124,51 @@ func (f ReviewFile) NewContent() string {
 }
 
 // New computes the ReviewFile for path from the content before and after the
-// change. An empty before (after) stands for an added (deleted) file.
+// change. An empty before (after) stands for an added (deleted) file. The
+// change is classified: binary files become size-only info entries, generated
+// files keep their diff but are marked for the UI.
 func New(path, before, after string) ReviewFile {
+	return NewWithAttrs(path, before, after, nil)
+}
+
+// NewWithAttrs is New with the .gitattributes check: generated reports
+// whether .gitattributes marks path as linguist-generated, nil skips it.
+func NewWithAttrs(path, before, after string, generated func(string) bool) ReviewFile {
+	kind := Classify(path, before, after, generated)
+	if kind == KindBinary {
+		return ReviewFile{
+			Path:    path,
+			Kind:    KindBinary,
+			OldSize: int64(len(before)),
+			NewSize: int64(len(after)),
+			old:     before,
+			new:     after,
+		}
+	}
+	f := newView(path, before, after, false)
+	f.Kind = kind
+	f.old, f.new = before, after
+	return f
+}
+
+// newView computes the line view of a text change. ignoreWS hides
+// whitespace-only changes: the diff is computed over lines that are equal
+// ignoring all whitespace, and the matched lines show the new text, so the
+// reader sees the new file.
+func newView(path, before, after string, ignoreWS bool) ReviewFile {
 	edits := zdiff.Edits(splitLines(before), splitLines(after))
+	if ignoreWS {
+		edits = zdiff.EditsFunc(splitLines(before), splitLines(after), wsEqual)
+	}
 	lines := make([]Line, 0, len(edits))
 	for _, e := range edits {
 		switch e.Op {
 		case zdiff.Match:
-			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: trimEOL(e.X)})
+			text := trimEOL(e.X)
+			if ignoreWS {
+				text = trimEOL(e.Y)
+			}
+			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: text})
 		case zdiff.Delete:
 			lines = append(lines, Line{Kind: Deleted, Old: e.PosX + 1, Text: trimEOL(e.X)})
 		case zdiff.Insert:
@@ -132,6 +183,68 @@ func New(path, before, after string) ReviewFile {
 		Hunks: hunks,
 		Folds: folds(lines),
 	}
+}
+
+// WithIgnoreWS returns the view of the same change with whitespace-only
+// changes hidden when ignore is true, and with them visible when it is
+// false. The classification and the rename path are kept. It is what the
+// UI shows when :set ignorews changes. Binary, mode and submodule entries
+// have no lines to hide and are returned unchanged.
+func (f ReviewFile) WithIgnoreWS(ignore bool) ReviewFile {
+	if f.Kind != KindDiff && f.Kind != KindGenerated {
+		return f
+	}
+	g := newView(f.Path, f.old, f.new, ignore)
+	g.Kind = f.Kind
+	g.OldPath = f.OldPath
+	g.old, g.new = f.old, f.new
+	return g
+}
+
+// Deleted reports whether the view shows the whole old version as
+// deleted lines: the file is gone.
+func (f ReviewFile) Deleted() bool {
+	for _, l := range f.Lines {
+		if l.New != 0 {
+			return false
+		}
+	}
+	return len(f.Lines) > 0
+}
+
+// Added reports whether the view shows the whole new version as added
+// lines: the file is new. New files carry no background wash, only the
+// gutter markers.
+func (f ReviewFile) Added() bool {
+	for _, l := range f.Lines {
+		if l.Old != 0 {
+			return false
+		}
+	}
+	return len(f.Lines) > 0
+}
+
+// Collapsed reports whether the UI shows the file collapsed by default:
+// deleted files, whose whole content is one dimmed block, and generated
+// files, whose noise the reviewer can unfold on demand.
+func (f ReviewFile) Collapsed() bool {
+	return f.Kind == KindGenerated || f.Deleted()
+}
+
+// wsEqual reports whether two lines are equal ignoring all whitespace.
+// It is the equality of the whitespace-ignoring diff.
+func wsEqual(a, b string) bool {
+	return stripWS(a) == stripWS(b)
+}
+
+// stripWS removes every whitespace rune from s.
+func stripWS(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // pairWords fills the Words of the changed lines. Within each hunk, every
