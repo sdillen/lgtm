@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -129,10 +130,7 @@ func run(dir string, args []string) (int, error) {
 	if err != nil {
 		return exitError, err
 	}
-	files := make([]diff.ReviewFile, len(changes.Files))
-	for i, f := range changes.Files {
-		files[i] = diff.New(f.Path, f.Old, f.New)
-	}
+	files := reviewFiles(changes)
 
 	// The read status persists into .lgtm/state.json at the worktree
 	// root; .lgtm/ is excluded from git so it is never committed.
@@ -166,6 +164,65 @@ func run(dir string, args []string) (int, error) {
 		return exitError, err
 	}
 	return final.(ui.Model).ExitCode(), nil
+}
+
+// reviewFiles turns the changes of the review subject into the
+// ReviewFile models of the UI: renames are detected, every change is
+// classified (binary, mode-only, submodule, generated), and generated
+// files are sorted to the end of the file list, where their collapsed
+// default does not get in the way. The file list stays sorted by path.
+func reviewFiles(changes source.Changes) []diff.ReviewFile {
+	attrs := diff.ParseGitAttributes(changes.GitAttributes)
+	files := make([]diff.File, len(changes.Files))
+	for i, f := range changes.Files {
+		files[i] = diff.File{
+			Path:      f.Path,
+			Status:    toDiffStatus(f.Status),
+			Old:       f.Old,
+			New:       f.New,
+			Submodule: f.Submodule,
+			OldMode:   f.OldMode,
+			NewMode:   f.NewMode,
+		}
+	}
+	files = diff.Renames(files)
+
+	out := make([]diff.ReviewFile, 0, len(files))
+	for _, f := range files {
+		var rf diff.ReviewFile
+		switch {
+		case f.Submodule:
+			rf = diff.Submodule(f.Path, f.Old, f.New)
+		case f.OldMode != 0 && f.NewMode != 0 && f.OldMode != f.NewMode:
+			rf = diff.Mode(f.Path, f.OldMode, f.NewMode)
+		default:
+			rf = diff.NewWithAttrs(f.Path, f.Old, f.New, attrs.Generated)
+		}
+		rf.OldPath = f.OldPath
+		out = append(out, rf)
+	}
+	// The rename detection pairs added with deleted files; the result
+	// is sorted again so the file list keeps its path order.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Path < out[j].Path
+	})
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Kind != diff.KindGenerated && out[j].Kind == diff.KindGenerated
+	})
+	return out
+}
+
+// toDiffStatus converts the status of the source module. The explicit
+// switch keeps the two enumerations decoupled.
+func toDiffStatus(s source.Status) diff.Status {
+	switch s {
+	case source.Added:
+		return diff.StatusAdded
+	case source.Deleted:
+		return diff.StatusDeleted
+	default:
+		return diff.StatusModified
+	}
 }
 
 // keyOverrides turns the key settings of the config into keymap

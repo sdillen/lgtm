@@ -458,3 +458,143 @@ func TestColonLgtmApprovesWithExitCodeZero(t *testing.T) {
 		t.Errorf("exit code = %d, want 0 after :lgtm", c)
 	}
 }
+
+// repoWithSpecialCases creates a repository with special file changes on
+// the feature branch: a rename, a deleted file, a binary change, a
+// generated file and a regular file.
+func repoWithSpecialCases(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false,
+		git.WithDefaultBranch(plumbing.NewBranchReferenceName("main")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(dir+"/"+name, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := func(msg string) {
+		t.Helper()
+		w, err := repo.Worktree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Commit(msg, &git.CommitOptions{
+			Author: &object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("app.go", "package app\nfunc A() {}\n")
+	write("gone.txt", "bye\n")
+	write("img.png", "\x00\x01")
+	if err := os.MkdirAll(dir+"/vendor", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write("vendor/lib.go", "package lib\n")
+	write("keep.txt", "keep\n")
+	commit("base")
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("feature"),
+		Create: true,
+		Keep:   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	write("old.go", "package app\nfunc A() {}\n")
+	if err := os.Remove(dir + "/app.go"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dir + "/gone.txt"); err != nil {
+		t.Fatal(err)
+	}
+	write("img.png", "\x00\x01\x02")
+	write("vendor/lib.go", "package lib\nfunc L() {}\n")
+	write("new.go", "package app\nfunc B() {}\n")
+	commit("feature work")
+	return dir
+}
+
+// TestRunDetectsRenames pins the wiring of the rename detection: the
+// moved file appears as one entry with "old → new" in the status line.
+func TestRunDetectsRenames(t *testing.T) {
+	dir := repoWithSpecialCases(t)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := got().Update(tea.WindowSizeMsg{Width: 50, Height: 8})
+
+	// The files are sorted by path; the rename of old.go is the fourth.
+	m = pressMain(m, "]", "f", "]", "f", "]", "f")
+	screen := ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "app.go → old.go") {
+		t.Errorf("screen lacks the rename display:\n%s", screen)
+	}
+}
+
+// TestRunSortsGeneratedFilesToTheEnd pins the acceptance criterion
+// "generierte Dateien eingeklappt ans Ende sortiert": the first file is
+// a regular one, the vendor file is last.
+func TestRunSortsGeneratedFilesToTheEnd(t *testing.T) {
+	dir := repoWithSpecialCases(t)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := got().Update(tea.WindowSizeMsg{Width: 50, Height: 8})
+
+	// The first screen shows the first file of the review: the deleted
+	// gone.txt, collapsed, not the vendor file.
+	screen := ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "gelöschte Zeile") {
+		t.Fatalf("first file is not the collapsed deletion:\n%s", screen)
+	}
+
+	// ]f walks through the files; the vendor file is the last entry.
+	m = pressMain(m, "]", "f", "]", "f", "]", "f", "]", "f")
+	screen = ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "vendor/lib.go  5/5") {
+		t.Errorf("generated file is not the last entry:\n%s", screen)
+	}
+	if !strings.Contains(screen, "generierte Datei") {
+		t.Errorf("vendor file is not collapsed:\n%s", screen)
+	}
+}
+
+// TestRunShowsBinaryFilesAsMetadata pins the wiring of the binary
+// classification: the view shows the sizes, not garbled content.
+func TestRunShowsBinaryFilesAsMetadata(t *testing.T) {
+	dir := repoWithSpecialCases(t)
+	got := captureProgram(t)
+	if _, err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := got().Update(tea.WindowSizeMsg{Width: 50, Height: 8})
+
+	// img.png is the second file, after the deleted gone.txt.
+	m = pressMain(m, "]", "f")
+	screen := ansi.Strip(m.View().Content)
+	if !strings.Contains(screen, "binär: 2 → 3 Bytes") {
+		t.Errorf("binary file lacks the size info:\n%s", screen)
+	}
+}
+
+// pressMain presses keys on a tea.Model like the UI test helpers.
+func pressMain(m tea.Model, keys ...string) tea.Model {
+	for _, k := range keys {
+		r := []rune(k)[0]
+		m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: k})
+	}
+	return m
+}
