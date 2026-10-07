@@ -68,6 +68,18 @@ func (s *State) Comments() []Comment {
 	return append([]Comment(nil), s.CommentList...)
 }
 
+// OpenComments returns the comments that are still open, in the order
+// they were added.
+func (s *State) OpenComments() []Comment {
+	var open []Comment
+	for _, c := range s.CommentList {
+		if c.Status == Open {
+			open = append(open, c)
+		}
+	}
+	return open
+}
+
 // newID returns a random comment id.
 func newID() string {
 	var b [8]byte

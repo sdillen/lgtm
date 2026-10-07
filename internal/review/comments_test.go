@@ -174,3 +174,21 @@ func TestCategoryNextCyclesFromTheDefault(t *testing.T) {
 		t.Errorf("cycle = %v, want %v", got, want)
 	}
 }
+
+// TestOpenCommentsListsOnlyOpenInOrder pins the domain accessor the
+// prompt uses: only comments with status open, in the order they were
+// added.
+func TestOpenCommentsListsOnlyOpenInOrder(t *testing.T) {
+	s := review.NewState()
+	s.AddComment(review.Comment{Path: "a.go", Start: 1, Text: "first"})
+	s.AddComment(review.Comment{Path: "b.go", Start: 1, Text: "done"})
+	s.AddComment(review.Comment{Path: "c.go", Start: 1, Text: "third"})
+	// The status is part of the persisted comment; CommentList is the
+	// only place to change it until the review module grows a method.
+	s.CommentList[1].Status = review.Status("done")
+
+	open := s.OpenComments()
+	if len(open) != 2 || open[0].Text != "first" || open[1].Text != "third" {
+		t.Errorf("OpenComments = %+v, want the open comments in order", open)
+	}
+}

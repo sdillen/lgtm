@@ -13,12 +13,7 @@ import (
 // by file in path order, each comment with its location, category,
 // quoted code and text, in line order.
 func (s *State) markdown() string {
-	var open []Comment
-	for _, c := range s.CommentList {
-		if c.Status == Open {
-			open = append(open, c)
-		}
-	}
+	open := s.OpenComments()
 	// The stable sort keeps comments on the same lines in the order
 	// they were added.
 	slices.SortStableFunc(open, func(a, b Comment) int {
@@ -60,6 +55,13 @@ func lineRange(start, end int) string {
 // codeFence returns a backtick fence longer than any backtick run in the
 // quote, so the quoted code cannot close the block early.
 func codeFence(quote string) string {
+	return strings.Repeat("`", CodeFenceLen(quote))
+}
+
+// CodeFenceLen is the length of a backtick fence that no backtick run
+// in the quote can close early; the markdown outputs of review.md and
+// the prompt share this format.
+func CodeFenceLen(quote string) int {
 	longest, run := 0, 0
 	for _, r := range quote {
 		if r == '`' {
@@ -69,7 +71,7 @@ func codeFence(quote string) string {
 			run = 0
 		}
 	}
-	return strings.Repeat("`", max(3, longest+1))
+	return max(3, longest+1)
 }
 
 // languageTag names the language of a file for the code block, "" if it
