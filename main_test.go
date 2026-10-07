@@ -17,7 +17,7 @@ import (
 )
 
 func TestParseNoArgsMeansDefault(t *testing.T) {
-	subj, err := parse(nil)
+	subj, opt, err := parse(nil)
 
 	if err != nil {
 		t.Fatal(err)
@@ -25,10 +25,13 @@ func TestParseNoArgsMeansDefault(t *testing.T) {
 	if subj.kind != subjectDefault {
 		t.Errorf("kind = %v, want subjectDefault", subj.kind)
 	}
+	if opt.theme != "" {
+		t.Errorf("theme = %q, want empty", opt.theme)
+	}
 }
 
 func TestParseSingleCommit(t *testing.T) {
-	subj, err := parse([]string{"abc1234"})
+	subj, _, err := parse([]string{"abc1234"})
 
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +42,7 @@ func TestParseSingleCommit(t *testing.T) {
 }
 
 func TestParseRange(t *testing.T) {
-	subj, err := parse([]string{"main..feature"})
+	subj, _, err := parse([]string{"main..feature"})
 
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +54,7 @@ func TestParseRange(t *testing.T) {
 
 func TestParseRejectsMalformedRanges(t *testing.T) {
 	for _, arg := range []string{"..b", "a..", "a..b..c", "a...b", "..."} {
-		_, err := parse([]string{arg})
+		_, _, err := parse([]string{arg})
 		if err == nil || !strings.Contains(err.Error(), "invalid range") {
 			t.Errorf("parse(%q) err = %v, want an invalid range error", arg, err)
 		}
@@ -60,7 +63,7 @@ func TestParseRejectsMalformedRanges(t *testing.T) {
 
 func TestParseRejectsMultipleArguments(t *testing.T) {
 	for _, args := range [][]string{{"a", "b"}, {"a..b", "c"}} {
-		_, err := parse(args)
+		_, _, err := parse(args)
 		if err == nil || !strings.Contains(err.Error(), "usage") {
 			t.Errorf("parse(%v) err = %v, want a usage error", args, err)
 		}
