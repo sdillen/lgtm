@@ -142,7 +142,7 @@ func run(dir string, args []string) (int, error) {
 		changesCh = w.Changes()
 	}
 
-	// The read status persists into .lgtm/state.json at the worktree
+	// The review state persists into .lgtm/state.json at the worktree
 	// root; .lgtm/ is excluded from git so it is never committed.
 	var state *review.State
 	stateDir := src.WorktreeDir()
@@ -155,6 +155,21 @@ func run(dir string, args []string) (int, error) {
 			return exitError, err
 		}
 	}
+	// The rounds snapshot the reviewed state under refs/lgtm/ and
+	// compare a new round with the previous one; they need the state.
+	var interdiff func() ([]diff.ReviewFile, error)
+	var snapshot func() error
+	round := 0
+	if state != nil {
+		r := rounds{repo: repo, subj: subj, state: state}
+		if err := r.begin(files); err != nil {
+			return exitError, err
+		}
+		if err := state.Save(stateDir); err != nil {
+			return exitError, err
+		}
+		interdiff, snapshot, round = r.interdiff(), r.snapshot, state.Round()
+	}
 	profile := termProfile()
 	final, err := runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
 		Keymap: km,
@@ -166,11 +181,14 @@ func run(dir string, args []string) (int, error) {
 		CfgDir: cfgDir,
 		Branch: src.HeadBranch(),
 		Base:   changes.Base,
+		Round:  round,
 		// The repo search and the all-files picker ask the source
 		// for the working tree.
-		Search:  search.New(repo),
-		Changes: changesCh,
-		Reload:  reload,
+		Search:    search.New(repo),
+		Changes:   changesCh,
+		Reload:    reload,
+		Interdiff: interdiff,
+		Snapshot:  snapshot,
 	}))
 	if err != nil {
 		return exitError, err
