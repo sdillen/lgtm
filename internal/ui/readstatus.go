@@ -18,6 +18,10 @@ func (m *Model) toggleRead() {
 // The manual toggle does not move the view, so a manually unread file
 // stays unread until the reviewer scrolls away and back.
 func (m *Model) maybeMarkRead() {
+	if m.context != nil || len(m.files) == 0 {
+		m.endVisible = false
+		return
+	}
 	visible := false
 	if len(m.files) > 0 {
 		visible = m.offset+m.bodyHeight() >= len(m.rows())

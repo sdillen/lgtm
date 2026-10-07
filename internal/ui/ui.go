@@ -17,6 +17,7 @@ import (
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 )
 
@@ -58,6 +59,11 @@ type Options struct {
 	// ApprovalDelay is the confirmation moment of :lgtm; 0 means the
 	// default of 800ms.
 	ApprovalDelay time.Duration
+	// Search answers context questions beyond the review: the repo
+	// file listing, reading files in their new state, project word
+	// search and heuristic definitions. nil disables the all-files
+	// picker, gr and gd.
+	Search *search.Searcher
 }
 
 // mode is what key presses go to.
@@ -69,6 +75,8 @@ const (
 	modeCmdline             // the : command line
 	modeDrawer              // the file drawer
 	modePicker              // the fuzzy file picker
+	modeSearch              // the / search line
+	modeResults             // the gr/gd result list
 	modeComment             // the comment float
 )
 
@@ -111,10 +119,46 @@ type Model struct {
 	sidebar      bool // the permanent sidebar is shown
 
 	// pickerQuery is the fuzzy query, pickerMatches the matching file
-	// indexes and pickerSel the selected match.
+	// indexes and pickerSel the selected match. pickerAll tells whether
+	// the picker runs over all repo files (pickerFiles) instead of the
+	// review files.
 	pickerQuery   string
 	pickerMatches []int
 	pickerSel     int
+	pickerAll     bool
+	pickerFiles   []string
+
+	// pathIndex maps the paths of the review files to their index, so
+	// context jumps can tell review files from files beyond it.
+	pathIndex map[string]int
+
+	// context is the file beyond the review that is currently open
+	// read-only; nil shows the review. It replaces the review file in
+	// the view until the reviewer jumps away.
+	context *contextFile
+
+	// jumps is the jumplist across files and positions, jumpPos the
+	// current entry. A jump appends the destination and drops the
+	// forward history; <C-o>/<C-i> move within the list.
+	jumps   []jumpEntry
+	jumpPos int
+
+	// col is the cursor column as a byte offset into the raw line
+	// text, hscroll the horizontal scroll offset in cells.
+	col     int
+	hscroll int
+
+	// searchQuery is the search pattern, searchMatches the matching
+	// lines of the current view and searchIdx the current match.
+	searchQuery   string
+	searchMatches []int
+	searchIdx     int
+
+	// results is the open gr/gd result list, resultSel the selected
+	// hit and resultsTitle the list title.
+	results      []search.Hit
+	resultSel    int
+	resultsTitle string
 
 	// visual is the line selection of V, started at visualLine (a line
 	// index of the current file).
@@ -185,8 +229,13 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		dir:   opts.Dir,
 	}
 	paths := make([]string, len(files))
+	m.pathIndex = make(map[string]int, len(files))
 	for i, f := range files {
 		paths[i] = f.Path
+		m.pathIndex[f.Path] = i
+	}
+	if len(files) > 0 {
+		m.jumps = []jumpEntry{{file: 0}}
 	}
 	m.tree = fileTree(paths)
 	m.drawerCursor = m.firstFileRow()
@@ -248,6 +297,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, cmd := m.pickerKey(msg)
 			m.maybeMarkRead()
 			return m, cmd
+		case modeSearch:
+			return m.searchKey(msg), nil
+		case modeResults:
+			return m.resultsKey(msg), nil
 		case modeComment:
 			return m.commentKey(msg), nil
 		}
@@ -327,14 +380,53 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 			m.openPicker()
 		}
 		return m, nil
+	case actPickFileAll:
+		m.openPickerAll()
+		return m, nil
 	case actToggleRead:
-		if len(m.files) > 0 {
+		if m.context == nil && len(m.files) > 0 {
 			m.toggleRead()
 		}
 		return m, nil
-	}
-	if len(m.files) == 0 {
+	case actSearch:
+		m.openSearch()
 		return m, nil
+	case actSearchNext:
+		m.searchJump(1)
+		return m, nil
+	case actSearchPrev:
+		m.searchJump(-1)
+		return m, nil
+	case actSearchWordNext:
+		m.searchWord(1)
+		return m, nil
+	case actSearchWordPrev:
+		m.searchWord(-1)
+		return m, nil
+	case actGrep:
+		m.grep()
+		return m, nil
+	case actGotoDef:
+		m.gotoDef()
+		return m, nil
+	case actJumpBack:
+		m.jumpHistory(-1)
+		return m, nil
+	case actJumpForward:
+		m.jumpHistory(1)
+		return m, nil
+	case actLeft:
+		m.moveCol(-1)
+		return m, nil
+	case actRight:
+		m.moveCol(1)
+		return m, nil
+	}
+	if len(m.files) == 0 && m.context == nil {
+		return m, nil
+	}
+	if m.context != nil {
+		return m.doContext(a, count), nil
 	}
 	n := max(1, count)
 	lastLine := len(m.files[m.fileIdx].Lines) - 1
@@ -354,16 +446,15 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		m.cursor = max(m.cursor-n*half, 0)
 	case actTop:
 		if count > 0 {
-			m.cursor = m.rowOfLine(min(count-1, lastLine))
+			m.jumpToLine(min(count-1, lastLine))
 		} else {
-			m.cursor, m.offset = 0, 0
+			m.jumpToLine(0)
 		}
 	case actBottom:
 		if count > 0 {
-			m.cursor = m.rowOfLine(min(count-1, lastLine))
+			m.jumpToLine(min(count-1, lastLine))
 		} else {
-			m.cursor = max(0, len(m.rows())-1)
-			m.offset = max(0, len(m.rows())-m.bodyHeight())
+			m.jumpToLine(lastLine)
 		}
 	case actCenter:
 		if count > 0 {
@@ -519,9 +610,14 @@ func (m *Model) jumpFile(dir int) bool {
 	if next < 0 || next >= len(m.files) {
 		return false
 	}
-	m.fileIdx = next
-	m.resetFile()
+	m.jumpToFile(next, 0)
 	return true
+}
+
+// jumpToLine moves the cursor to the file line and records the jump.
+func (m *Model) jumpToLine(line int) {
+	m.recordJump(jumpEntry{file: m.fileIdx, line: line})
+	m.cursor = m.rowOfLine(line)
 }
 
 // rowOfHeader returns the row of the section header starting at the line,
@@ -539,8 +635,10 @@ func (m Model) rowOfHeader(line int) int {
 // highlights it once.
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
+	m.col = 0
 	m.endVisible = false
 	m.visual = false
+	m.searchMatches = nil
 	m.loadFileComments()
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
@@ -578,20 +676,23 @@ func highlightFile(h *theme.Highlighter, f diff.ReviewFile) ([]theme.Line, map[i
 
 // clamp keeps cursor and offset inside the current rows.
 func (m *Model) clamp() {
-	if len(m.files) == 0 {
+	if len(m.files) == 0 && m.context == nil {
 		m.cursor, m.offset = 0, 0
 		return
 	}
-	rows := m.rows()
-	m.cursor = min(m.cursor, max(0, len(rows)-1))
-	m.offset = max(0, min(m.offset, max(0, len(rows)-m.bodyHeight())))
+	n := m.viewRows()
+	m.cursor = min(m.cursor, max(0, n-1))
+	m.offset = max(0, min(m.offset, max(0, n-m.bodyHeight())))
 }
 
 // scrollCursorIntoView scrolls the minimum amount so the cursor row is
-// visible.
+// visible, and keeps the column inside the line.
 func (m *Model) scrollCursorIntoView() {
-	rows := m.rows()
-	m.offset = max(0, min(m.offset, max(0, len(rows)-m.bodyHeight())))
+	if len(m.files) == 0 && m.context == nil {
+		return
+	}
+	n := m.viewRows()
+	m.offset = max(0, min(m.offset, max(0, n-m.bodyHeight())))
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
@@ -599,6 +700,7 @@ func (m *Model) scrollCursorIntoView() {
 		m.offset = m.cursor - m.bodyHeight() + 1
 	}
 	m.clamp()
+	m.col = min(m.col, len(m.viewLine(m.cursorViewLine())))
 }
 
 // row is one row of the view: a line of the file, a fold marker, a
@@ -745,9 +847,12 @@ func (m Model) foldOfLine(line int) int {
 
 func (m Model) View() tea.View {
 	var content string
-	if len(m.files) == 0 {
+	switch {
+	case m.context != nil:
+		content = m.contextView()
+	case len(m.files) == 0:
 		content = m.emptyView()
-	} else {
+	default:
 		content = m.fileView()
 	}
 	v := tea.NewView(m.withOverlay(content))
@@ -788,7 +893,8 @@ func (m Model) fileView() string {
 		if j := m.offset + i; j < len(rows) {
 			r := rows[j]
 			hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
-			b.WriteString(ansi.Truncate(m.renderRow(r, hl), width, ""))
+			row := ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, "")
+			b.WriteString(ansi.Truncate(row, width, ""))
 		}
 		b.WriteByte('\n')
 	}

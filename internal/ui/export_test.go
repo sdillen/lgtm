@@ -398,7 +398,7 @@ func TestColonLgtmApprovesWithoutComments(t *testing.T) {
 // TestHelpListsTheExportCommands pins that the help documents :lgtm and
 // the force quit.
 func TestHelpListsTheExportCommands(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 80, 46)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 80, 60)
 
 	m = press(m, "?")
 	for _, want := range []string{":lgtm", ":q!", "Y", "yc"} {

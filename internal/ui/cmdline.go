@@ -180,6 +180,8 @@ func (m Model) bottomLine() string {
 	switch {
 	case m.mode == modeCmdline:
 		return ":" + m.cmdline
+	case m.mode == modeSearch:
+		return "/" + m.searchQuery
 	case m.messageErr:
 		return m.theme.Styles.Deleted.Render(m.message)
 	case m.message != "":

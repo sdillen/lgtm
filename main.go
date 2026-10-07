@@ -15,6 +15,7 @@ import (
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
@@ -157,6 +158,9 @@ func run(dir string, args []string) (int, error) {
 		CfgDir: cfgDir,
 		Branch: src.HeadBranch(),
 		Base:   changes.Base,
+		// The repo search and the all-files picker ask the source
+		// for the working tree.
+		Search: search.New(src),
 	}))
 	if err != nil {
 		return exitError, err

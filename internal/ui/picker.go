@@ -9,6 +9,8 @@ import (
 
 // openPicker opens the fuzzy file picker with an empty query.
 func (m *Model) openPicker() {
+	m.pickerAll = false
+	m.pickerFiles = nil
 	m.mode = modePicker
 	m.pickerQuery = ""
 	m.pickerSel = 0
@@ -22,12 +24,15 @@ func (m Model) pickerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeNormal
+		m.pickerAll = false
+		m.pickerFiles = nil
 	case "enter":
 		if len(m.pickerMatches) > 0 {
-			m.fileIdx = m.pickerMatches[min(m.pickerSel, len(m.pickerMatches)-1)]
-			m.resetFile()
+			m.pickFile(m.pickerMatches[min(m.pickerSel, len(m.pickerMatches)-1)])
 		}
 		m.mode = modeNormal
+		m.pickerAll = false
+		m.pickerFiles = nil
 	case "ctrl+n", "down":
 		if len(m.pickerMatches) > 0 {
 			m.pickerSel = min(m.pickerSel+1, len(m.pickerMatches)-1)
@@ -49,14 +54,22 @@ func (m Model) pickerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// updatePickerMatches re-runs the fuzzy query and resets the selection.
+// updatePickerMatches re-runs the fuzzy query over the picker's file
+// list and resets the selection.
 func (m *Model) updatePickerMatches() {
+	paths := m.pickerFiles
+	if !m.pickerAll {
+		paths = make([]string, len(m.files))
+		for i, f := range m.files {
+			paths[i] = f.Path
+		}
+	}
 	type scored struct {
 		file, score int
 	}
 	var list []scored
-	for i, f := range m.files {
-		if score, ok := fuzzyScore(m.pickerQuery, f.Path); ok {
+	for i, path := range paths {
+		if score, ok := fuzzyScore(m.pickerQuery, path); ok {
 			list = append(list, scored{i, score})
 		}
 	}
@@ -68,8 +81,16 @@ func (m *Model) updatePickerMatches() {
 	m.pickerSel = 0
 }
 
+// pickerPath is the path of the picker entry.
+func (m Model) pickerPath(i int) string {
+	if m.pickerAll {
+		return m.pickerFiles[i]
+	}
+	return m.files[i].Path
+}
+
 // pickerBox is the fuzzy picker: the query and the matching files in a
-// rounded box.
+// rounded box. The all-files picker marks the files of the review.
 func (m Model) pickerBox() string {
 	lines := []string{m.theme.Styles.Status.Render("Pick file: ") + m.pickerQuery}
 	for i, fi := range m.pickerMatches {
@@ -77,9 +98,14 @@ func (m Model) pickerBox() string {
 		if i == m.pickerSel {
 			prefix = "> "
 		}
-		path := m.files[fi].Path
-		if m.state.Read(path) {
+		path := m.pickerPath(fi)
+		switch {
+		case !m.pickerAll && m.state.Read(path):
 			path += "  ✓"
+		case m.pickerAll:
+			if _, ok := m.pathIndex[path]; ok {
+				path += "  ●"
+			}
 		}
 		lines = append(lines, prefix+path)
 	}

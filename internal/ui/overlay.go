@@ -100,6 +100,24 @@ func (m Model) helpBox() string {
 	return m.box(title, lines[m.helpOffset:end])
 }
 
+// resultsBox renders the gr/gd result list: the hits as
+// "path:line  text", the selection marked.
+func (m Model) resultsBox() string {
+	lines := make([]string, len(m.results))
+	for i, h := range m.results {
+		prefix := "  "
+		if i == m.resultSel {
+			prefix = "> "
+		}
+		lines[i] = prefix + fmt.Sprintf("%s:%d  %s", h.Path, h.Line, h.Text)
+	}
+	rows := max(1, m.bodyHeight()-boxChromeRows-1)
+	if len(lines) > rows+1 {
+		lines = append(lines[:rows+1], "…")
+	}
+	return m.box(m.resultsTitle, lines)
+}
+
 // whichKeyBox renders the follow-up keys of the typed prefix.
 func (m Model) whichKeyBox() string {
 	next := m.keys.Next()
@@ -172,6 +190,10 @@ func (m Model) withOverlay(view string) string {
 		x, y = 0, max(0, (m.bodyHeight()-h)/2)
 	case m.mode == modePicker:
 		box = m.pickerBox()
+		w, h := lipgloss.Size(box)
+		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+	case m.mode == modeResults:
+		box = m.resultsBox()
 		w, h := lipgloss.Size(box)
 		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
 	case m.mode == modeComment:

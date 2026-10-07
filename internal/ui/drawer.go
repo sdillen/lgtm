@@ -46,11 +46,10 @@ func (m *Model) moveDrawer(dir int) {
 // drawer stays open so the reviewer can browse.
 func (m *Model) jumpToDrawerFile() {
 	r := m.tree[m.drawerCursor]
-	if r.dir || r.file == m.fileIdx {
+	if r.dir || (r.file == m.fileIdx && m.context == nil) {
 		return
 	}
-	m.fileIdx = r.file
-	m.resetFile()
+	m.jumpToFile(r.file, 0)
 }
 
 // rowOfFile returns the tree row showing the file, -1 if there is none.
