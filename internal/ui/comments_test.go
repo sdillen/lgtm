@@ -441,6 +441,21 @@ func TestNextCommentJumpsAcrossFiles(t *testing.T) {
 	}
 }
 
+// TestDDAndXNeedACommentUnderTheCursor pins the guard of the comment
+// maintenance keys: dd and x on a code line report instead of acting.
+func TestDDAndXNeedACommentUnderTheCursor(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 60, 12)
+
+	m = press(m, "d", "d")
+	if s := screen(m); !strings.Contains(s, "move the cursor to a comment to delete") {
+		t.Errorf("dd on a code line gives no hint:\n%s", s)
+	}
+	m = press(m, "x")
+	if s := screen(m); !strings.Contains(s, "move the cursor to a comment to mark as done") {
+		t.Errorf("x on a code line gives no hint:\n%s", s)
+	}
+}
+
 // TestFloatEditsWithMinimalVimBindings pins the normal mode bindings of
 // the float: 0 and $ move within the line, x deletes, i/a/A re-enter
 // insert mode, <CR> starts a new line.
