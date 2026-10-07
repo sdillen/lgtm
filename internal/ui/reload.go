@@ -14,10 +14,12 @@ import (
 type changedMsg struct{}
 
 // checkedMsg carries the review files as they are after a change, or
-// the error resolving them.
+// the error resolving them. gen is the load of the files the check
+// compares against; a check that started before R is stale.
 type checkedMsg struct {
 	files []diff.ReviewFile
 	err   error
+	gen   int
 }
 
 // waitForChange waits for the next watcher signal; nil when the review
@@ -43,16 +45,17 @@ func (m Model) checkChanges() tea.Cmd {
 	if reload == nil {
 		return m.waitForChange()
 	}
+	gen := m.loadGen
 	return func() tea.Msg {
 		files, err := reload()
-		return checkedMsg{files: files, err: err}
+		return checkedMsg{files: files, err: err, gen: gen}
 	}
 }
 
 // takeCheck updates the change hint from a background check and waits
 // for the next signal.
 func (m Model) takeCheck(msg checkedMsg) (Model, tea.Cmd) {
-	if msg.err == nil {
+	if msg.err == nil && msg.gen == m.loadGen {
 		m.changed = changedFiles(m.files, msg.files)
 	}
 	return m, m.waitForChange()
@@ -68,22 +71,12 @@ func changedFiles(shown, now []diff.ReviewFile) int {
 	n := 0
 	for _, f := range now {
 		g, ok := byPath[f.Path]
-		if !ok || !sameChange(f, g) {
+		if !ok || !f.SameChange(g) {
 			n++
 		}
 		delete(byPath, f.Path)
 	}
 	return n + len(byPath)
-}
-
-// sameChange reports whether two review files show the same change.
-func sameChange(a, b diff.ReviewFile) bool {
-	aOld, aNew := a.Contents()
-	bOld, bNew := b.Contents()
-	return a.Path == b.Path && a.OldPath == b.OldPath && a.Kind == b.Kind &&
-		aOld == bOld && aNew == bNew &&
-		a.OldMode == b.OldMode && a.NewMode == b.NewMode &&
-		a.OldSub == b.OldSub && a.NewSub == b.NewSub
 }
 
 // changeHint is the status line hint about changes not shown yet, ""
@@ -126,6 +119,7 @@ func (m *Model) reload() {
 	}
 	m.setFiles(next, collapsed)
 	m.changed = 0
+	m.loadGen++
 	m.restore(at)
 
 	m.message = "neu geladen"

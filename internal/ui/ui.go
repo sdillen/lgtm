@@ -211,8 +211,10 @@ type Model struct {
 	dimmed     map[int]theme.Line
 
 	// changed is the number of files that changed in the source since
-	// the files were loaded; the status line hints at R.
+	// the files were loaded; the status line hints at R. loadGen counts
+	// the reloads, so checks against older files are dropped.
 	changed int
+	loadGen int
 }
 
 // whichKeyMsg fires when a prefix has waited long enough for which-key.
@@ -297,6 +299,7 @@ func (m Model) allFileIndexes() []int {
 	return all
 }
 
+// Init starts waiting for the watcher's change signals.
 func (m Model) Init() tea.Cmd { return m.waitForChange() }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

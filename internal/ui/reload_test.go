@@ -187,3 +187,42 @@ func TestRWithoutReloadReportsIt(t *testing.T) {
 		t.Errorf("no message:\n%s", s)
 	}
 }
+
+// TestACheckFromBeforeRIsDropped: a background check that started before
+// R reports an older state of the source; it must not bring the hint
+// back for the freshly loaded files.
+func TestACheckFromBeforeRIsDropped(t *testing.T) {
+	l := newLiveReview()
+	m := start(ui.New([]diff.ReviewFile{mainV1}, "main", themeFor, l.options(t.TempDir())), 60, 12)
+	l.next = []diff.ReviewFile{mainV2}
+	l.changes <- struct{}{}
+	m, check := m.Update(m.Init()())
+	stale := check() // resolved while the source was at mainV2
+
+	l.next = []diff.ReviewFile{diff.New("main.go", "package main\n", "package main\n\n// z\n")}
+	m = press(m, "R")
+	m, _ = m.Update(stale)
+	m = pressMsg(m, tea.KeyPressMsg{Code: tea.KeyEscape}) // clears the reload message
+
+	if s := screen(m); strings.Contains(s, "↻") {
+		t.Errorf("stale check brought the hint back:\n%s", s)
+	}
+}
+
+// TestRKeepsHidingWhitespaceChanges: with :set ignorews the reloaded
+// files hide whitespace-only changes as well.
+func TestRKeepsHidingWhitespaceChanges(t *testing.T) {
+	l := newLiveReview()
+	m := start(ui.New([]diff.ReviewFile{mainV1}, "main", themeFor, l.options(t.TempDir())), 60, 12)
+	m = press(m, ":")
+	m = typeText(m, "set ignorews")
+	m = pressMsg(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	l.next = []diff.ReviewFile{diff.New("main.go", "package main\n\nfunc a() {}\n", "package main\n\nfunc a()  {}\n")}
+
+	m = press(m, "R")
+	m = pressMsg(m, tea.KeyPressMsg{Code: tea.KeyEscape}) // clears the reload message
+
+	if s := screen(m); !strings.Contains(s, "+0 −0") {
+		t.Errorf("reloaded file shows the whitespace change:\n%s", s)
+	}
+}
