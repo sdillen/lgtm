@@ -13,6 +13,7 @@ import (
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
@@ -117,12 +118,28 @@ func run(dir string, args []string) error {
 	for i, f := range changes.Files {
 		files[i] = diff.New(f.Path, f.Old, f.New)
 	}
+
+	// The read status persists into .lgtm/state.json at the worktree
+	// root; .lgtm/ is excluded from git so it is never committed.
+	var state *review.State
+	stateDir := src.WorktreeDir()
+	if stateDir != "" {
+		state, err = review.Load(stateDir)
+		if err != nil {
+			return err
+		}
+		if err := review.EnsureExcluded(stateDir); err != nil {
+			return err
+		}
+	}
 	profile := termProfile()
 	_, err = runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
 		Keymap: km,
 		LoadTheme: func(name string) (theme.Theme, error) {
 			return theme.Load(name, cfgDir, profile)
 		},
+		State: state,
+		Dir:   stateDir,
 	}))
 	return err
 }

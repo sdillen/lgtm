@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -305,4 +306,36 @@ func repoHead(dir string) (string, error) {
 		return "", err
 	}
 	return ref.Hash().String(), nil
+}
+
+// TestRunPersistsTheReadStatus pins the acceptance criterion
+// "Persistenz des Gelesen-Status": running lgtm in a repository creates
+// .git/info/exclude with the .lgtm/ entry, and once the end of a file
+// is visible the read status is written to .lgtm/state.json.
+func TestRunPersistsTheReadStatus(t *testing.T) {
+	dir := repoWithRange(t)
+	got := captureProgram(t)
+	if err := run(dir, []string{"main..feature"}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
+
+	exclude, err := os.ReadFile(filepath.Join(dir, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf(".git/info/exclude: %v", err)
+	}
+	if !strings.Contains(string(exclude), ".lgtm/") {
+		t.Errorf(".git/info/exclude lacks the .lgtm/ entry:\n%s", exclude)
+	}
+
+	// a.txt is one line and fits the screen: its end is visible from
+	// the start, so the read status is persisted right away.
+	data, err := os.ReadFile(filepath.Join(dir, ".lgtm", "state.json"))
+	if err != nil {
+		t.Fatalf("state.json after the end became visible: %v", err)
+	}
+	if !strings.Contains(string(data), "a.txt") || !strings.Contains(string(data), "true") {
+		t.Errorf("state.json lacks the read a.txt:\n%s", data)
+	}
+	_ = m
 }
