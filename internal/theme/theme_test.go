@@ -136,7 +136,7 @@ func TestBackgroundKindFallsBackWhenNotATerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	t.Cleanup(func() { _ = f.Close() })
 
 	kind, ok := theme.BackgroundKind(f, f)
 	if ok {

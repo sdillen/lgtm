@@ -43,7 +43,7 @@ in
 
   # https://devenv.sh/scripts/
   scripts.check.exec = ''
-    gofmt -l . && go vet ./...
+    gofmt -l $(git ls-files -co --exclude-standard '*.go') && go vet ./...
   '';
 
   # https://devenv.sh/basics/
@@ -61,5 +61,6 @@ in
   git-hooks.hooks = {
     gofmt.enable = true;
     gotest.enable = true;
+    golangci-lint.enable = true;
   };
 }
