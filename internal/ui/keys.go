@@ -25,6 +25,8 @@ const (
 	actDrawer        keymap.Action = "toggle-file-drawer"
 	actPicker        keymap.Action = "pick-file"
 	actToggleRead    keymap.Action = "toggle-read"
+	actVisual        keymap.Action = "select-lines"
+	actComment       keymap.Action = "comment"
 	actThemeCmd      keymap.Action = "choose-theme"
 	actHelp          keymap.Action = "help"
 	actCmdline       keymap.Action = "command-line"
@@ -55,6 +57,8 @@ var bindings = []keymap.Binding{
 	{Action: actDrawer, Keys: []string{"<leader>d"}, Desc: "toggle file drawer"},
 	{Action: actPicker, Keys: []string{"<leader>p"}, Desc: "pick a changed file"},
 	{Action: actToggleRead, Keys: []string{"<leader>r"}, Desc: "toggle read status"},
+	{Action: actVisual, Keys: []string{"V"}, Desc: "select lines"},
+	{Action: actComment, Keys: []string{"c"}, Desc: "comment the line or selection"},
 	{Action: actThemeCmd, Keys: []string{"<leader>t"}, Desc: "choose theme"},
 	{Action: actHelp, Keys: []string{"?"}, Desc: "help"},
 	{Action: actCmdline, Keys: []string{":"}, Desc: "command line"},

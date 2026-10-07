@@ -172,6 +172,9 @@ func (m Model) withOverlay(view string) string {
 		box = m.pickerBox()
 		w, h := lipgloss.Size(box)
 		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+	case m.mode == modeComment:
+		box = m.commentBox()
+		x, y = m.commentBoxPosition(box)
 	case m.whichKey:
 		box = m.whichKeyBox()
 		w, h := lipgloss.Size(box)

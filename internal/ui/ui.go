@@ -55,6 +55,7 @@ const (
 	modeCmdline             // the : command line
 	modeDrawer              // the file drawer
 	modePicker              // the fuzzy file picker
+	modeComment             // the comment float
 )
 
 // Model is the review view: one file at a time, with folds for the
@@ -100,6 +101,16 @@ type Model struct {
 	pickerQuery   string
 	pickerMatches []int
 	pickerSel     int
+
+	// visual is the line selection of V, started at visualLine (a line
+	// index of the current file).
+	visual     bool
+	visualLine int
+
+	// draft is the comment being written while the float is open;
+	// fileComments caches the comments of the current file.
+	draft        draft
+	fileComments []review.Comment
 
 	// endVisible tells whether the end of the current file was visible
 	// after the last update; the read status is only set when it
@@ -203,6 +214,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, cmd := m.pickerKey(msg)
 			m.maybeMarkRead()
 			return m, cmd
+		case modeComment:
+			return m.commentKey(msg), nil
 		}
 		m, cmd := m.dispatch(msg.String())
 		m.maybeMarkRead()
@@ -230,8 +243,11 @@ func (m Model) dispatch(key string) (Model, tea.Cmd) {
 		}
 		return m.do(r.Action, r.Count)
 	case keymap.Unbound:
-		if m.mode == modeHelp && key == "esc" {
+		switch {
+		case m.mode == modeHelp && key == "esc":
 			m.mode = modeNormal
+		case key == "esc":
+			m.visual = false
 		}
 	}
 	return m, nil
@@ -346,6 +362,10 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		}
 	case actUnified:
 		m.setUnified(!m.unified)
+	case actVisual:
+		m.toggleVisual()
+	case actComment:
+		m.openComment()
 	}
 	m.scrollCursorIntoView()
 	return m, nil
@@ -358,6 +378,7 @@ func (m *Model) setUnified(on bool) {
 	}
 	m.unified = on
 	m.cursor, m.offset = 0, 0
+	m.visual = false
 }
 
 // jumpToHunk moves the cursor to the next (dir 1) or previous (dir -1)
@@ -427,6 +448,8 @@ func (m Model) rowOfHeader(line int) int {
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
 	m.endVisible = false
+	m.visual = false
+	m.loadFileComments()
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
 		m.highlights, m.dimmed = nil, nil
@@ -486,12 +509,13 @@ func (m *Model) scrollCursorIntoView() {
 	m.clamp()
 }
 
-// row is one row of the view: a line of the file, a fold marker or a
-// section header.
+// row is one row of the view: a line of the file, a fold marker, a
+// section header or a line of a comment.
 type row struct {
-	line   int    // index into the file's Lines; header rows carry the section start
+	line   int    // index into the file's Lines; header rows carry the section start, comment rows their anchor line
 	fold   int    // fold index of a marker row, -1 otherwise
 	header string // rendered section header of a header row, "" otherwise
+	note   *note  // comment line of a comment row, nil otherwise
 }
 
 // rows are the rows of the current view mode for the current file.
@@ -513,14 +537,20 @@ func (m Model) fullRows(f diff.ReviewFile) []row {
 			if m.foldsOpen[fi] {
 				for ; i < f.Folds[fi].End; i++ {
 					rows = append(rows, row{line: i, fold: -1})
+					rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
 				}
 			} else {
+				// The comments inside a closed fold stay visible
+				// below its marker.
 				rows = append(rows, row{line: -1, fold: fi})
-				i = f.Folds[fi].End
+				for ; i < f.Folds[fi].End; i++ {
+					rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
+				}
 			}
 			fi++
 		} else {
 			rows = append(rows, row{line: i, fold: -1})
+			rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
 			i++
 		}
 	}
@@ -535,6 +565,7 @@ func (m Model) unifiedRows(f diff.ReviewFile) []row {
 		rows = append(rows, row{line: s.Start, fold: -1, header: s.Header()})
 		for i := s.Start; i < s.End; i++ {
 			rows = append(rows, row{line: i, fold: -1})
+			rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
 		}
 	}
 	return rows
@@ -560,6 +591,11 @@ func (m Model) foldAtCursor() int {
 	if r.line < 0 {
 		return -1
 	}
+	if r.note != nil {
+		// A comment row belongs to the fold of its line, open or
+		// closed.
+		return m.foldOfLine(r.line)
+	}
 	f := m.files[m.fileIdx]
 	for fi, fold := range f.Folds {
 		if m.foldsOpen[fi] && fold.Start <= r.line && r.line < fold.End {
@@ -576,7 +612,7 @@ func (m Model) foldAtCursor() int {
 func (m Model) rowOfLine(line int) int {
 	rows := m.rows()
 	for i, r := range rows {
-		if r.line == line {
+		if r.line == line && r.note == nil {
 			return i
 		}
 	}
@@ -656,7 +692,9 @@ func (m Model) fileView() string {
 	rows := m.rows()
 	for i := range m.bodyHeight() {
 		if j := m.offset + i; j < len(rows) {
-			b.WriteString(ansi.Truncate(m.renderRow(rows[j], j == m.cursor), width, ""))
+			r := rows[j]
+			hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
+			b.WriteString(ansi.Truncate(m.renderRow(r, hl), width, ""))
 		}
 		b.WriteByte('\n')
 	}
@@ -710,8 +748,14 @@ func (m Model) statusLine() string {
 		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
 		fmt.Sprintf("+%d −%d", added, deleted),
 	}
+	if len(m.state.Comments()) > 0 {
+		parts = append(parts, m.commentCount())
+	}
 	if m.unified {
 		parts = append(parts, "[unified]")
+	}
+	if m.visual {
+		parts = append(parts, "-- VISUAL --")
 	}
 	if typed := m.keys.Typed(); typed != "" {
 		parts = append(parts, typed)
@@ -721,6 +765,9 @@ func (m Model) statusLine() string {
 
 // renderRow renders one row of the current file, highlighting the cursor.
 func (m Model) renderRow(r row, cursor bool) string {
+	if r.note != nil {
+		return m.renderNote(r.note, cursor)
+	}
 	if r.header != "" {
 		style := m.theme.Styles.Hunk
 		if cursor {
