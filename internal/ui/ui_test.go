@@ -154,6 +154,70 @@ func TestDeletedLinesAreSyntaxHighlightedDimmed(t *testing.T) {
 	}
 }
 
+// TestIntraLineWordsAreHighlighted pins the acceptance criterion "changed
+// tokens within a line are visibly highlighted": the theme's word
+// backgrounds sit directly on the changed words of a paired line, in the
+// night theme. The changed lines sit below a context line, so no cursor
+// background hides the word highlight.
+func TestIntraLineWordsAreHighlighted(t *testing.T) {
+	w := diff.New("w.go", "package main\n\nvar a = \"the quick brown fox\"\nvar b = 1\n",
+		"package main\n\nvar a = \"the quick red fox\"\nvar b = 1\n")
+	m := start(ui.New([]diff.ReviewFile{w}, "main", themeFor, ui.Options{}), 40, 6)
+	content := m.View().Content
+
+	// The added word "red" carries the word added background #41562a.
+	if !strings.Contains(content, "48;2;65;86;42mred") {
+		t.Errorf("view lacks the word added background on the changed word:\n%s", content)
+	}
+	// The deleted word "brown" carries the word deleted background
+	// #63302f.
+	if !strings.Contains(content, "48;2;99;48;47mbrown") {
+		t.Errorf("view lacks the word deleted background on the changed word:\n%s", content)
+	}
+	// The unchanged words carry no word background: each background
+	// appears exactly once in the view.
+	if got := strings.Count(content, "48;2;65;86;42"); got != 1 {
+		t.Errorf("word added background appears %d times, want 1:\n%s", got, content)
+	}
+	if got := strings.Count(content, "48;2;99;48;47"); got != 1 {
+		t.Errorf("word deleted background appears %d times, want 1:\n%s", got, content)
+	}
+}
+
+// TestIntraLineWordsAreHighlightedInTheLightTheme pins the same behaviour
+// for the day theme.
+func TestIntraLineWordsAreHighlightedInTheLightTheme(t *testing.T) {
+	day := theme.Default(theme.KindLight)
+	w := diff.New("w.go", "package main\n\nvar a = \"the quick brown fox\"\nvar b = 1\n",
+		"package main\n\nvar a = \"the quick red fox\"\nvar b = 1\n")
+	m := start(ui.New([]diff.ReviewFile{w}, "main", day, ui.Options{}), 40, 6)
+	content := m.View().Content
+
+	// Word added #c5d8b5, word deleted #e7c4c4.
+	if !strings.Contains(content, "48;2;197;216;181mred") {
+		t.Errorf("view lacks the day word added background on the changed word:\n%s", content)
+	}
+	if !strings.Contains(content, "48;2;231;196;196mbrown") {
+		t.Errorf("view lacks the day word deleted background on the changed word:\n%s", content)
+	}
+}
+
+// TestIntraLineWordsSurviveTabExpansion pins that the raw-text word ranges
+// land on the right word even when a leading tab shifts the rendered
+// positions: the background sits on "false", not on "return".
+func TestIntraLineWordsSurviveTabExpansion(t *testing.T) {
+	w := diff.New("t.go", "func f() {\n\treturn true\n}\n", "func f() {\n\treturn false\n}\n")
+	m := start(ui.New([]diff.ReviewFile{w}, "main", themeFor, ui.Options{}), 40, 6)
+	content := m.View().Content
+
+	if !strings.Contains(content, "48;2;65;86;42mfalse") {
+		t.Errorf("view lacks the word added background on the changed word after a tab:\n%s", content)
+	}
+	if strings.Contains(content, "48;2;65;86;42mreturn") {
+		t.Errorf("word added background lands on the unchanged word:\n%s", content)
+	}
+}
+
 func TestThemeStylesTheStatusLine(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 30, 5)
 	content := m.View().Content

@@ -647,12 +647,18 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 		markerStyle = markerStyle.Background(st.Cursor)
 	}
 
-	var b strings.Builder
-	for _, s := range m.segments(l, idx) {
-		style := s.Style
-		if wash != nil {
-			style = style.Background(wash)
+	segs := washSegments(m.segments(l, idx), wash)
+	if len(l.Words) > 0 {
+		bg := st.WordAddedBG
+		if l.Kind == diff.Deleted {
+			bg = st.WordDeletedBG
 		}
+		segs = wordSegments(segs, l.Text, l.Words, bg)
+	}
+
+	var b strings.Builder
+	for _, s := range segs {
+		style := s.Style
 		if cursor {
 			style = style.Background(st.Cursor)
 		}
@@ -660,6 +666,61 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 	}
 	return gutter.Render(fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))) +
 		markerStyle.Render(marker) + b.String()
+}
+
+// washSegments applies the background wash of a changed line to the
+// syntax segments, without touching the highlight cache the segments came
+// from.
+func washSegments(segs []theme.Segment, wash color.Color) []theme.Segment {
+	if wash == nil {
+		return segs
+	}
+	washed := make([]theme.Segment, len(segs))
+	for i, s := range segs {
+		washed[i] = theme.Segment{Text: s.Text, Style: s.Style.Background(wash)}
+	}
+	return washed
+}
+
+// wordSegments splits the syntax segments of a line at the intra-line word
+// range boundaries and applies the word highlight background to the
+// changed pieces. The ranges are byte offsets into the raw line text; the
+// segments carry the tab-expanded text, so the ranges are translated to
+// expanded offsets first.
+func wordSegments(segs []theme.Segment, raw string, words []diff.Word, bg color.Color) []theme.Segment {
+	if len(words) == 0 {
+		return segs
+	}
+	exp := make([]diff.Word, len(words))
+	for i, w := range words {
+		exp[i] = diff.Word{
+			Start: w.Start + 3*strings.Count(raw[:w.Start], "\t"),
+			End:   w.End + 3*strings.Count(raw[:w.End], "\t"),
+		}
+	}
+	var out []theme.Segment
+	pos := 0 // expanded offset of the current segment's start
+	for _, s := range segs {
+		start, end := pos, pos+len(s.Text)
+		pos = end
+		prev := start
+		for _, w := range exp {
+			if w.End <= start || w.Start >= end {
+				continue
+			}
+			if w.Start > prev {
+				out = append(out, theme.Segment{Text: s.Text[prev-start : w.Start-start], Style: s.Style})
+				prev = w.Start
+			}
+			next := min(w.End, end)
+			out = append(out, theme.Segment{Text: s.Text[prev-start : next-start], Style: s.Style.Background(bg)})
+			prev = next
+		}
+		if prev < end {
+			out = append(out, theme.Segment{Text: s.Text[prev-start:], Style: s.Style})
+		}
+	}
+	return out
 }
 
 // segments returns the syntax segments of a line: from the file highlight
