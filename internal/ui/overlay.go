@@ -183,6 +183,10 @@ func (m Model) overlayBox() (box string, x, y int, ok bool) {
 		box = m.startBox()
 		w, h := lipgloss.Size(box)
 		return box, max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2), true
+	case m.approved:
+		box = m.lgtmBox()
+		w, h := lipgloss.Size(box)
+		return box, max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2), true
 	case m.mode == modeHelp:
 		box = m.helpBox()
 		w, h := lipgloss.Size(box)

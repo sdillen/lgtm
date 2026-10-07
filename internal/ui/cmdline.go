@@ -63,7 +63,7 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 const defaultApprovalDelay = 800 * time.Millisecond
 
 // approve ends the review approved: a short confirmation moment in the
-// status line, then quit with exit code 0.
+// middle of the screen, then quit with exit code 0.
 func (m *Model) approve() tea.Cmd {
 	m.approved = true
 	m.savePosition()
@@ -73,6 +73,17 @@ func (m *Model) approve() tea.Cmd {
 		delay = defaultApprovalDelay
 	}
 	return tea.Tick(delay, func(time.Time) tea.Msg { return approveMsg{} })
+}
+
+// lgtmBox is the confirmation moment of :lgtm: a glowing "✓ LGTM"
+// in the middle of the screen while the dimmed review waits behind it.
+func (m Model) lgtmBox() string {
+	lines := []string{
+		m.theme.Styles.Status.Bold(true).Render("✓ LGTM"),
+		"",
+		m.theme.Styles.Fold.Render("review approved"),
+	}
+	return m.box("", lines)
 }
 
 // setTheme switches to the named theme, or names the current one.
