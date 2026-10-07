@@ -79,6 +79,10 @@ type Options struct {
 	// Snapshot records the reviewed state again after R, so the
 	// snapshot of the round is what the reviewer saw; nil disables it.
 	Snapshot func() error
+	// StartScreen shows the review overview on startup (branch, base,
+	// round, size and directory distribution) until the first key
+	// press. Off by default; the command enables it.
+	StartScreen bool
 	// Animate turns the smooth scroll of half-page moves and jumps and
 	// the slide-in of the overlays on; nil means off. The command
 	// enables it unless the config turns it off.
@@ -247,6 +251,9 @@ type Model struct {
 	// still to be restored; that needs the terminal size.
 	resuming bool
 
+	// startScreen shows the review overview until the first key press.
+	startScreen bool
+
 	// smooth is the active smooth scroll (nil when idle), slide the
 	// active overlay slide-in; both tick on frameMsg.
 	smooth *scrollTween
@@ -290,13 +297,15 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		opts.State = review.NewState()
 	}
 	m := Model{
-		files: files,
-		label: label,
-		theme: th,
-		opts:  opts,
-		keys:  opts.Keymap.Dispatcher(),
-		state: opts.State,
-		dir:   opts.Dir,
+		files:       files,
+		label:       label,
+		theme:       th,
+		opts:        opts,
+		keys:        opts.Keymap.Dispatcher(),
+		state:       opts.State,
+		dir:         opts.Dir,
+		rowsCache:   &rowsCache{},
+		startScreen: opts.StartScreen,
 	}
 	m.full = files
 	m.loadInterdiff()
@@ -389,6 +398,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.savePosition()
 			m.quitOpen = len(m.state.OpenComments()) > 0
 			return m, tea.Quit
+		}
+		if m.startScreen {
+			// The first key dismisses the overview and acts
+			// normally.
+			m.startScreen = false
 		}
 		m.finishAnims()
 		m.keyGen++

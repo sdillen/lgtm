@@ -1,8 +1,6 @@
 package ui_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,24 +74,4 @@ func TestDrawerRendersTheScrimmedOverlay(t *testing.T) {
 // teaKeySpace presses the leader key like the runtime sends it.
 func teaKeySpace() tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
-}
-
-// assertGolden compares the screen with the golden file in testdata.
-// LGTM_UPDATE_GOLDEN=1 writes the golden files.
-func assertGolden(t *testing.T, name, got string) {
-	t.Helper()
-	path := filepath.Join("testdata", name)
-	if os.Getenv("LGTM_UPDATE_GOLDEN") != "" {
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("golden %s: %v (set LGTM_UPDATE_GOLDEN=1 to create it)", name, err)
-	}
-	if string(want) != got {
-		t.Errorf("golden %s:\n%s\nwant:\n%s", name, got, want)
-	}
 }

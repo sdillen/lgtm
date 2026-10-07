@@ -14,7 +14,7 @@ import (
 )
 
 // runReview runs lgtm in dir with args and returns the model at a
-// fixed terminal size.
+// fixed terminal size, with the start screen dismissed.
 func runReview(t *testing.T, dir string, args ...string) tea.Model {
 	t.Helper()
 	got := captureProgram(t)
@@ -22,7 +22,7 @@ func runReview(t *testing.T, dir string, args ...string) tea.Model {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 60, Height: 8})
-	return m
+	return pressMain(m, "j") // the first key dismisses the start screen
 }
 
 // snapshotFile reads path from the snapshot commit of round n.

@@ -191,12 +191,13 @@ func run(dir string, args []string) (int, error) {
 		Round:  round,
 		// The repo search and the all-files picker ask the source
 		// for the working tree.
-		Search:    search.New(repo),
-		Changes:   changesCh,
-		Reload:    reload,
-		Interdiff: interdiff,
-		Snapshot:  snapshot,
-		Animate:   &animate,
+		Search:      search.New(repo),
+		Changes:     changesCh,
+		Reload:      reload,
+		Interdiff:   interdiff,
+		Snapshot:    snapshot,
+		StartScreen: true,
+		Animate:     &animate,
 	}))
 	if err != nil {
 		return exitError, err

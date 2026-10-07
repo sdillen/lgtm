@@ -1,0 +1,18 @@
+⋯ 1 unveränderte Zeile ⋯
+   2      - b
+        2 + B
+⋯ 1 unverände╭────────────────────────────────╮
+        4 + d│ lgtm                           │
+             │ Branch feat/wow  Base main     │
+             │ Runde 3                        │
+             │ 2 Dateien · +4 −2              │
+             │                                │
+             │ internal/diff  ████░░░░  +2 −1 │
+             │ internal/ui    ████░░░░  +2 −1 │
+             │                                │
+             │ Press any key to review        │
+             ╰────────────────────────────────╯
+
+
+
+internal/ui/window.go  1/2  +2 −1  Runde 3

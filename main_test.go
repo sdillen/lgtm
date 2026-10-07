@@ -119,6 +119,7 @@ func TestRunRangeShowsTheChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
+	m = pressMain(m, "j") // the first key dismisses the start screen
 	screen := ansi.Strip(m.View().Content)
 
 	if !strings.Contains(screen, "+ two") || !strings.Contains(screen, "a.txt") {
@@ -140,6 +141,7 @@ func TestRunCommitShowsOnlyThatCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
+	m = pressMain(m, "j") // the first key dismisses the start screen
 	screen := ansi.Strip(m.View().Content)
 
 	if !strings.Contains(screen, "+ two") || !strings.Contains(screen, "- one") {
@@ -157,6 +159,7 @@ func TestRunWithoutChangesShowsHintNamingTheSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 30, Height: 5})
+	m = pressMain(m, "j") // the first key dismisses the start screen
 	screen := ansi.Strip(m.View().Content)
 
 	if !strings.Contains(screen, "Nothing to review.") ||
@@ -553,6 +556,7 @@ func TestRunSortsGeneratedFilesToTheEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, _ := got().Update(tea.WindowSizeMsg{Width: 50, Height: 8})
+	m = pressMain(m, "j") // the first key dismisses the start screen
 
 	// The first screen shows the first file of the review: the deleted
 	// gone.txt, collapsed, not the vendor file.
@@ -608,6 +612,7 @@ func TestRunWatchesTheWorkingTreeAndReloadsOnR(t *testing.T) {
 	t.Cleanup(func() { runProgram = old })
 	runProgram = func(m tea.Model) (tea.Model, error) {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 6})
+		m = pressMain(m, "j") // the first key dismisses the start screen
 		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("three\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
