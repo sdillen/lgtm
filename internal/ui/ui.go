@@ -20,16 +20,18 @@ var (
 	statusStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7"))
 )
 
-// Model is the full-file view of the first review file.
+// Model is the full-file view of the first review file. label names the
+// review subject and appears in the hint when there is nothing to review.
 type Model struct {
 	files         []diff.ReviewFile
+	label         string
 	width, height int
 	offset        int // index of the first visible line
 }
 
-// New returns a Model showing files.
-func New(files []diff.ReviewFile) Model {
-	return Model{files: files}
+// New returns a Model showing files of the review subject label.
+func New(files []diff.ReviewFile, label string) Model {
+	return Model{files: files, label: label}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -55,13 +57,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() tea.View {
 	var content string
 	if len(m.files) == 0 {
-		content = "No changes to review. Press q to quit."
+		content = m.emptyView()
 	} else {
 		content = m.fileView()
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
+}
+
+// emptyView is the friendly hint shown instead of an empty review.
+func (m Model) emptyView() string {
+	hint := []string{"Nothing to review."}
+	if m.label != "" {
+		hint = append(hint, "", "No changes in "+m.label+".")
+	}
+	hint = append(hint, "", "Press q to quit.")
+	if h := max(0, m.height); len(hint) > h {
+		hint = hint[:h]
+	}
+	lines := make([]string, len(hint))
+	for i, line := range hint {
+		lines[i] = ansi.Truncate(line, m.width, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) fileView() string {

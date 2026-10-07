@@ -67,12 +67,20 @@ func (f *fixture) remove(path string) {
 // commit stages everything in the working tree and commits it.
 func (f *fixture) commit(msg string) plumbing.Hash {
 	f.t.Helper()
+	return f.commitWithParents(msg)
+}
+
+// commitWithParents is like commit, but the new commit gets the given
+// parents instead of HEAD, e.g. to fabricate a merge commit.
+func (f *fixture) commitWithParents(msg string, parents ...plumbing.Hash) plumbing.Hash {
+	f.t.Helper()
 	w := f.worktree()
 	if err := w.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		f.t.Fatal(err)
 	}
 	h, err := w.Commit(msg, &git.CommitOptions{
-		Author: &object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0)},
+		Author:  &object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0)},
+		Parents: parents,
 	})
 	if err != nil {
 		f.t.Fatal(err)

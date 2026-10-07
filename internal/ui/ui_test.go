@@ -22,7 +22,7 @@ var file = diff.ReviewFile{
 }
 
 func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}), 30, 5)
+	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 5)
 
 	assertScreen(t, m, []string{
 		"   1    1   package main",
@@ -34,7 +34,7 @@ func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
 }
 
 func TestJAndKScrollWithinTheFile(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}), 30, 3)
+	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 3)
 
 	assertScreen(t, m, []string{
 		"   1    1   package main",
@@ -65,7 +65,7 @@ func TestJAndKScrollWithinTheFile(t *testing.T) {
 }
 
 func TestQQuits(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}), 30, 5)
+	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 5)
 
 	_, cmd := m.Update(key("q"))
 
@@ -81,7 +81,7 @@ func TestLongLinesAreCutAtTheTerminalWidth(t *testing.T) {
 	long := diff.ReviewFile{Path: "long.txt", Lines: []diff.Line{
 		{Kind: diff.Added, New: 1, Text: "0123456789abcdef"},
 	}}
-	m := start(ui.New([]diff.ReviewFile{long}), 20, 2)
+	m := start(ui.New([]diff.ReviewFile{long}, "main"), 20, 2)
 
 	assertScreen(t, m, []string{
 		"        1 + 01234567",
@@ -93,7 +93,7 @@ func TestTabsAreExpandedToSpaces(t *testing.T) {
 	tabbed := diff.ReviewFile{Path: "t.go", Lines: []diff.Line{
 		{Kind: diff.Context, Old: 1, New: 1, Text: "\tx"},
 	}}
-	m := start(ui.New([]diff.ReviewFile{tabbed}), 30, 2)
+	m := start(ui.New([]diff.ReviewFile{tabbed}, "main"), 30, 2)
 
 	assertScreen(t, m, []string{
 		"   1    1       x",
@@ -101,11 +101,27 @@ func TestTabsAreExpandedToSpaces(t *testing.T) {
 	})
 }
 
-func TestWithoutChangesShowsHint(t *testing.T) {
-	m := start(ui.New(nil), 30, 3)
+func TestWithoutChangesShowsHintNamingTheReviewSubject(t *testing.T) {
+	m := start(ui.New(nil, "main..feature"), 30, 5)
 
 	m = press(m, "j", "k")
-	assertScreen(t, m, []string{"No changes to review. Press q to quit."})
+	assertScreen(t, m, []string{
+		"Nothing to review.",
+		"",
+		"No changes in main..feature.",
+		"",
+		"Press q to quit.",
+	})
+}
+
+func TestWithoutChangesShowsHintWithoutSubject(t *testing.T) {
+	m := start(ui.New(nil, ""), 30, 5)
+
+	assertScreen(t, m, []string{
+		"Nothing to review.",
+		"",
+		"Press q to quit.",
+	})
 }
 
 func start(m tea.Model, width, height int) tea.Model {

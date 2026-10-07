@@ -181,6 +181,153 @@ func TestOpenFindsLinkedWorktreeOnDisk(t *testing.T) {
 	})
 }
 
+func TestRangeShowsChangesBetweenTwoCommits(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "one\n")
+	f.commit("base")
+	f.branch("feature")
+	f.write("a.txt", "two\n")
+	f.write("b.txt", "b\n")
+	f.commit("feature work")
+	f.write("dirty.txt", "dirty\n")
+
+	got, err := source.New(f.repo).Range("main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Modified, Old: "one\n", New: "two\n"},
+		{Path: "b.txt", Status: source.Added, New: "b\n"},
+	})
+	if got.Base != "main" {
+		t.Errorf("Base = %q, want %q", got.Base, "main")
+	}
+}
+
+func TestRangeIgnoresUncommittedChanges(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "one\n")
+	f.commit("base")
+	f.branch("feature")
+	f.write("a.txt", "two\n")
+	f.commit("feature work")
+	f.write("a.txt", "three\n")
+
+	got, err := source.New(f.repo).Range("main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Modified, Old: "one\n", New: "two\n"},
+	})
+}
+
+func TestRangeEmptySpanShowsNoChanges(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+
+	got, err := source.New(f.repo).Range("main", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, nil)
+}
+
+func TestRangeFailsWhenRefCannotBeResolved(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+
+	for _, rev := range []string{"main", "feature"} {
+		_, err := source.New(f.repo).Range("does-not-exist", rev)
+		if err == nil || !strings.Contains(err.Error(), "does-not-exist") {
+			t.Errorf("Range(does-not-exist, %s) err = %v, want an error naming the ref", rev, err)
+		}
+	}
+	_, err := source.New(f.repo).Range("main", "does-not-exist")
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist") {
+		t.Errorf("Range(main, does-not-exist) err = %v, want an error naming the ref", err)
+	}
+}
+
+func TestCommitShowsChangesAgainstParent(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "one\n")
+	base := f.commit("base")
+	f.write("a.txt", "two\n")
+	f.write("b.txt", "b\n")
+	second := f.commit("second")
+	f.write("dirty.txt", "dirty\n")
+
+	got, err := source.New(f.repo).Commit(second.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Modified, Old: "one\n", New: "two\n"},
+		{Path: "b.txt", Status: source.Added, New: "b\n"},
+	})
+	if got.Base != base.String()[:7] {
+		t.Errorf("Base = %q, want %q", got.Base, base.String()[:7])
+	}
+}
+
+func TestCommitOfRootCommitShowsEveryFileAsAdded(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	root := f.commit("root")
+
+	got, err := source.New(f.repo).Commit(root.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Added, New: "a\n"},
+	})
+}
+
+func TestCommitOfMergeShowsChangesAgainstFirstParent(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "base\n")
+	f.commit("base")
+	f.branch("feature")
+	f.write("a.txt", "feature\n")
+	feature := f.commit("feature work")
+	f.checkout("main")
+	f.write("main.txt", "main\n")
+	mainWork := f.commit("main work")
+	// Fabricate the merge commit: main takes feature's a.txt and keeps
+	// its own main.txt.
+	f.write("a.txt", "feature\n")
+	merged := f.commitWithParents("merge feature", mainWork, feature)
+
+	got, err := source.New(f.repo).Commit(merged.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Modified, Old: "base\n", New: "feature\n"},
+	})
+}
+
+func TestCommitFailsWhenRefCannotBeResolved(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+
+	_, err := source.New(f.repo).Commit("does-not-exist")
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist") {
+		t.Errorf("err = %v, want an error naming the ref", err)
+	}
+}
+
 func TestOpenOutsideRepositoryFailsWithReadableError(t *testing.T) {
 	dir := t.TempDir()
 

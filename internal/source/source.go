@@ -96,6 +96,113 @@ func (s *Source) Default() (Changes, error) {
 	return Changes{Base: baseRef.Name().Short(), Files: files}, nil
 }
 
+// Range resolves a..b: the changes between the trees of the two refs, i.e.
+// a commit span without uncommitted working tree changes. Base is a as the
+// user gave it.
+func (s *Source) Range(a, b string) (Changes, error) {
+	aCommit, err := s.resolveCommit(a)
+	if err != nil {
+		return Changes{}, err
+	}
+	bCommit, err := s.resolveCommit(b)
+	if err != nil {
+		return Changes{}, err
+	}
+	aTree, err := aCommit.Tree()
+	if err != nil {
+		return Changes{}, fmt.Errorf("read tree of %s: %w", a, err)
+	}
+	bTree, err := bCommit.Tree()
+	if err != nil {
+		return Changes{}, fmt.Errorf("read tree of %s: %w", b, err)
+	}
+	files, err := diffTrees(aTree, bTree)
+	if err != nil {
+		return Changes{}, err
+	}
+	return Changes{Base: a, Files: files}, nil
+}
+
+// Commit resolves rev: the changes of exactly that commit against its
+// first parent, like git show. A root commit is compared against the empty
+// tree, so every file appears as added. Base is the short hash of the
+// parent, empty for a root commit.
+func (s *Source) Commit(rev string) (Changes, error) {
+	c, err := s.resolveCommit(rev)
+	if err != nil {
+		return Changes{}, err
+	}
+	tree, err := c.Tree()
+	if err != nil {
+		return Changes{}, fmt.Errorf("read tree of %s: %w", rev, err)
+	}
+	base := ""
+	baseTree := &object.Tree{}
+	if c.NumParents() > 0 {
+		parent, err := s.repo.CommitObject(c.ParentHashes[0])
+		if err != nil {
+			return Changes{}, fmt.Errorf("read parent of %s: %w", rev, err)
+		}
+		baseTree, err = parent.Tree()
+		if err != nil {
+			return Changes{}, fmt.Errorf("read parent tree of %s: %w", rev, err)
+		}
+		base = parent.Hash.String()[:7]
+	}
+	files, err := diffTrees(baseTree, tree)
+	if err != nil {
+		return Changes{}, err
+	}
+	return Changes{Base: base, Files: files}, nil
+}
+
+// resolveCommit resolves rev (branch, tag, hash, HEAD~n, …) to a commit,
+// with an error that names the unresolvable ref.
+func (s *Source) resolveCommit(rev string) (*object.Commit, error) {
+	hash, err := s.repo.ResolveRevision(plumbing.Revision(rev))
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return nil, fmt.Errorf("cannot resolve %q", rev)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot resolve %q: %w", rev, err)
+	}
+	if hash == nil {
+		return nil, fmt.Errorf("cannot resolve %q", rev)
+	}
+	c, err := s.repo.CommitObject(*hash)
+	if err != nil {
+		return nil, fmt.Errorf("%q is not a commit: %w", rev, err)
+	}
+	return c, nil
+}
+
+// diffTrees lists the files that differ between two trees.
+func diffTrees(oldTree, newTree *object.Tree) ([]File, error) {
+	changes, err := object.DiffTree(oldTree, newTree)
+	if err != nil {
+		return nil, fmt.Errorf("diff trees: %w", err)
+	}
+	var files []File
+	for _, c := range changes {
+		path := c.To.Name
+		if path == "" {
+			path = c.From.Name
+		}
+		old, inOld, err := treeContent(oldTree, path)
+		if err != nil {
+			return nil, err
+		}
+		new, inNew, err := treeContent(newTree, path)
+		if err != nil {
+			return nil, err
+		}
+		if f, changed := fileFor(path, old, inOld, new, inNew); changed {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
 // defaultBranch finds the default branch: the HEAD of a remote (origin
 // first), otherwise a local main or master.
 func (s *Source) defaultBranch() (*plumbing.Reference, error) {
@@ -179,16 +286,25 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 		if err != nil {
 			return nil, fmt.Errorf("read %s from working tree: %w", p, err)
 		}
-		switch {
-		case inOld && inNew && old != cur:
-			files = append(files, File{Path: p, Status: Modified, Old: old, New: cur})
-		case !inOld && inNew:
-			files = append(files, File{Path: p, Status: Added, New: cur})
-		case inOld && !inNew:
-			files = append(files, File{Path: p, Status: Deleted, Old: old})
+		if f, changed := fileFor(p, old, inOld, cur, inNew); changed {
+			files = append(files, f)
 		}
 	}
 	return files, nil
+}
+
+// fileFor builds the File entry for a path, reporting whether the content
+// actually changed between the old and the new version.
+func fileFor(path, old string, inOld bool, new string, inNew bool) (File, bool) {
+	switch {
+	case inOld && inNew && old != new:
+		return File{Path: path, Status: Modified, Old: old, New: new}, true
+	case !inOld && inNew:
+		return File{Path: path, Status: Added, New: new}, true
+	case inOld && !inNew:
+		return File{Path: path, Status: Deleted, Old: old}, true
+	}
+	return File{}, false
 }
 
 func treeContent(tree *object.Tree, path string) (string, bool, error) {
