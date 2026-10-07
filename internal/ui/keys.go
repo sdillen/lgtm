@@ -27,6 +27,8 @@ const (
 	actToggleRead    keymap.Action = "toggle-read"
 	actVisual        keymap.Action = "select-lines"
 	actComment       keymap.Action = "comment"
+	actCopyPrompt    keymap.Action = "copy-prompt"
+	actCopyComment   keymap.Action = "copy-comment"
 	actThemeCmd      keymap.Action = "choose-theme"
 	actHelp          keymap.Action = "help"
 	actCmdline       keymap.Action = "command-line"
@@ -59,6 +61,8 @@ var bindings = []keymap.Binding{
 	{Action: actToggleRead, Keys: []string{"<leader>r"}, Desc: "toggle read status"},
 	{Action: actVisual, Keys: []string{"V"}, Desc: "select lines"},
 	{Action: actComment, Keys: []string{"c"}, Desc: "comment the line or selection"},
+	{Action: actCopyPrompt, Keys: []string{"Y"}, Desc: "copy the review prompt to the clipboard"},
+	{Action: actCopyComment, Keys: []string{"yc"}, Desc: "copy the comment under the cursor"},
 	{Action: actThemeCmd, Keys: []string{"<leader>t"}, Desc: "choose theme"},
 	{Action: actHelp, Keys: []string{"?"}, Desc: "help"},
 	{Action: actCmdline, Keys: []string{":"}, Desc: "command line"},

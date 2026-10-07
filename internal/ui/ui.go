@@ -44,6 +44,20 @@ type Options struct {
 	// Dir is the worktree root the state is saved to; empty disables
 	// saving.
 	Dir string
+	// CfgDir is the config directory holding the global prompt
+	// template; empty disables it.
+	CfgDir string
+	// Branch, Base and Round are the prompt template data of the
+	// review; Round is 0 until rounds are tracked.
+	Branch string
+	Base   string
+	Round  int
+	// Copy copies the prompt to the clipboard; nil means the default
+	// OSC 52/tool chain.
+	Copy func(string) error
+	// ApprovalDelay is the confirmation moment of :lgtm; 0 means the
+	// default of 800ms.
+	ApprovalDelay time.Duration
 }
 
 // mode is what key presses go to.
@@ -107,6 +121,15 @@ type Model struct {
 	visual     bool
 	visualLine int
 
+	// quitArmed remembers that the quit warning was shown; the next q
+	// quits. Any other action disarms it.
+	quitArmed bool
+	// quitOpen reports that open comments remained when the review
+	// ended; it becomes the exit code 1.
+	quitOpen bool
+	// approved is true after :lgtm; the review ends with exit code 0.
+	approved bool
+
 	// draft is the comment being written while the float is open;
 	// fileComments caches the comments of the current file.
 	draft        draft
@@ -127,6 +150,9 @@ type Model struct {
 // whichKeyMsg fires when a prefix has waited long enough for which-key.
 // gen is the key press it belongs to.
 type whichKeyMsg struct{ gen int }
+
+// approveMsg ends the program after the :lgtm confirmation moment.
+type approveMsg struct{}
 
 // New returns a Model showing files of the review subject label with the
 // given theme.
@@ -196,8 +222,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen == m.keyGen && m.keys.InPrefix() {
 			m.whichKey = true
 		}
+	case approveMsg:
+		return m, tea.Quit
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			m.quitOpen = len(m.state.OpenComments()) > 0
 			return m, tea.Quit
 		}
 		m.keyGen++
@@ -256,9 +285,20 @@ func (m Model) dispatch(key string) (Model, tea.Cmd) {
 // do runs an action of the review view. count is the count typed before
 // the keys, 0 if none: motions repeat, line jumps go to line count.
 func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
+	// Any action except q cancels the quit warning, so the warning is
+	// for the next q only.
+	if a != actQuit {
+		m.quitArmed = false
+	}
 	switch a {
 	case actQuit:
-		return m, tea.Quit
+		return m, m.quitAction()
+	case actCopyPrompt:
+		m.copyPrompt()
+		return m, nil
+	case actCopyComment:
+		m.copyComment()
+		return m, nil
 	case actHelp:
 		m.mode, m.helpOffset = modeHelp, 0
 		return m, nil
@@ -369,6 +409,33 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	}
 	m.scrollCursorIntoView()
 	return m, nil
+}
+
+// quitAction ends the review: with open comments the first q only warns
+// and the second q quits, with the exit code reporting the open
+// comments.
+func (m *Model) quitAction() tea.Cmd {
+	n := len(m.state.OpenComments())
+	if n > 0 && !m.quitArmed {
+		m.quitArmed = true
+		m.message = fmt.Sprintf("%d offene Kommentare – Y kopieren? Nochmal q beendet", n)
+		return nil
+	}
+	m.quitOpen = n > 0
+	return tea.Quit
+}
+
+// ExitCode is the process exit code of the finished review: 0 when the
+// review was approved with :lgtm or no open comments remained, 1 when
+// open comments remained, so scripts and agents can react.
+func (m Model) ExitCode() int {
+	if m.approved {
+		return 0
+	}
+	if m.quitOpen {
+		return 1
+	}
+	return 0
 }
 
 // setUnified switches between the full-file and the unified view.

@@ -318,16 +318,18 @@ func (m Model) noteRows(newLine, line int) []row {
 		}
 		text := string(c.Category) + ": " + c.Text
 		for _, l := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
-			rows = append(rows, row{line: line, fold: -1, note: &note{category: c.Category, text: l}})
+			rows = append(rows, row{line: line, fold: -1, note: &note{category: c.Category, text: l, comment: c}})
 		}
 	}
 	return rows
 }
 
 // note is one line of a comment shown as a virtual row under the code.
+// comment is the whole comment the line belongs to, for yc.
 type note struct {
 	category review.Category
 	text     string
+	comment  review.Comment
 }
 
 // renderNote renders a comment row in the colour of its category,

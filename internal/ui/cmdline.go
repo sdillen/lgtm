@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,15 +32,22 @@ func (m Model) cmdlineKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// execute runs a command line: :q, :theme [name] and :set [option...].
+// execute runs a command line: :q, :q!, :lgtm, :theme [name] and :set
+// [option...].
 func (m Model) execute(line string) (Model, tea.Cmd) {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return m, nil
 	}
+	m.quitArmed = false
 	switch name, args := fields[0], fields[1:]; name {
-	case "q", "q!", "quit", "quit!":
+	case "q", "quit":
+		return m, m.quitAction()
+	case "q!", "quit!":
+		m.quitOpen = len(m.state.OpenComments()) > 0
 		return m, tea.Quit
+	case "lgtm":
+		return m, m.approve()
 	case "theme":
 		m.setTheme(args)
 	case "set":
@@ -48,6 +56,22 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 		m.fail("unknown command: " + name)
 	}
 	return m, nil
+}
+
+// defaultApprovalDelay is how long :lgtm shows its confirmation before
+// quitting.
+const defaultApprovalDelay = 800 * time.Millisecond
+
+// approve ends the review approved: a short confirmation moment in the
+// status line, then quit with exit code 0.
+func (m *Model) approve() tea.Cmd {
+	m.approved = true
+	m.message = "lgtm – approved"
+	delay := m.opts.ApprovalDelay
+	if delay == 0 {
+		delay = defaultApprovalDelay
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg { return approveMsg{} })
 }
 
 // setTheme switches to the named theme, or names the current one.
