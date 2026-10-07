@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -9,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
 )
 
@@ -20,15 +23,20 @@ const floatWidth = 56
 // start after it.
 const gutterWidth = 12
 
-// draft is the comment being written in the float.
+// draft is the comment being written in the float. An empty path marks
+// a comment on the whole review, empty start/end a comment on the whole
+// file, and old an anchor in the old file content (deleted lines).
+// editID is the id of the comment being edited, "" for a new comment.
 type draft struct {
 	path       string
-	start, end int // 1-based, inclusive line range in the new file
+	start, end int // 1-based, inclusive line range; 0 for file/global
+	old        bool
 	quote      string
 	category   review.Category
 	text       string
 	pos        int  // byte offset of the text cursor
 	normal     bool // vim normal mode; the float starts in insert mode
+	editID     string
 }
 
 // toggleVisual starts or ends the line selection at the cursor line. A
@@ -69,10 +77,15 @@ func (m Model) selected(line int) bool {
 	return lo <= line && line <= hi
 }
 
-// openComment opens the float for the selection or the cursor line. The
-// anchor is the range of new-file lines it covers; a selection of only
-// deleted lines has no anchor yet.
+// openComment opens the float for the selection or the cursor line. On
+// a comment row it edits the comment instead. The anchor is the range
+// of lines it covers: new-file lines by default, the old lines when the
+// selection covers only deleted lines.
 func (m *Model) openComment() {
+	if r := m.rows()[m.cursor]; r.note != nil && !m.visual {
+		m.openEdit(r.note.comment)
+		return
+	}
 	if !m.visual && !m.onCodeLine() {
 		m.fail("move the cursor to a code line to comment")
 		return
@@ -89,13 +102,26 @@ func (m *Model) openComment() {
 		}
 		end = l.New
 	}
+	old := false
 	if start == 0 {
-		m.fail("deleted lines cannot be commented yet")
-		return
+		// The selection has no line of the new file: it anchors in
+		// the old state, on the deleted lines.
+		old = true
+		for _, l := range f.Lines[lo : hi+1] {
+			if l.Old == 0 {
+				continue
+			}
+			if start == 0 {
+				start = l.Old
+			}
+			end = l.Old
+		}
 	}
 	var quote []string
 	for _, l := range f.Lines {
-		if l.New >= start && l.New <= end {
+		if old && l.Old >= start && l.Old <= end {
+			quote = append(quote, l.Text)
+		} else if !old && l.New >= start && l.New <= end {
 			quote = append(quote, l.Text)
 		}
 	}
@@ -103,8 +129,39 @@ func (m *Model) openComment() {
 		path:     f.Path,
 		start:    start,
 		end:      end,
+		old:      old,
 		quote:    strings.Join(quote, "\n"),
 		category: review.DefaultCategory,
+	}
+	m.mode = modeComment
+}
+
+// openCommentFile opens the float for a comment on the whole current
+// file.
+func (m *Model) openCommentFile() {
+	m.draft = draft{path: m.files[m.fileIdx].Path, category: review.DefaultCategory}
+	m.mode = modeComment
+}
+
+// openCommentGlobal opens the float for a comment on the whole review.
+func (m *Model) openCommentGlobal() {
+	m.draft = draft{category: review.DefaultCategory}
+	m.mode = modeComment
+}
+
+// openEdit opens the float with the text and category of the existing
+// comment; saving replaces them.
+func (m *Model) openEdit(c review.Comment) {
+	m.draft = draft{
+		path:     c.Path,
+		start:    c.Start,
+		end:      c.End,
+		old:      c.Old,
+		quote:    c.Quote,
+		category: c.Category,
+		text:     c.Text,
+		pos:      len(c.Text),
+		editID:   c.ID,
 	}
 	m.mode = modeComment
 }
@@ -177,8 +234,8 @@ func (m Model) commentKey(msg tea.KeyPressMsg) Model {
 	return m
 }
 
-// saveDraft stores the draft as a new comment and persists the review.
-// An empty draft is discarded.
+// saveDraft stores the draft: a new comment, or the replacement of the
+// edited comment, and persists the review. An empty draft is discarded.
 func (m *Model) saveDraft() {
 	m.mode = modeNormal
 	m.visual = false
@@ -187,14 +244,20 @@ func (m *Model) saveDraft() {
 		m.message = "empty comment discarded"
 		return
 	}
-	m.state.AddComment(review.Comment{
-		Path:     m.draft.path,
-		Start:    m.draft.start,
-		End:      m.draft.end,
-		Quote:    m.draft.quote,
-		Category: m.draft.category,
-		Text:     text,
-	})
+	if m.draft.editID != "" {
+		m.state.UpdateComment(m.draft.editID, text, m.draft.category)
+		m.message = "comment updated"
+	} else {
+		m.state.AddComment(review.Comment{
+			Path:     m.draft.path,
+			Start:    m.draft.start,
+			End:      m.draft.end,
+			Old:      m.draft.old,
+			Quote:    m.draft.quote,
+			Category: m.draft.category,
+			Text:     text,
+		})
+	}
 	m.loadFileComments()
 	m.saveState()
 }
@@ -249,16 +312,17 @@ func (m Model) categoryStyle(c review.Category) lipgloss.Style {
 	return st.CommentShould
 }
 
+// location names the anchor of the draft for the float title.
+func (d draft) location() string {
+	return review.Comment{Path: d.path, Start: d.start, End: d.end, Old: d.old}.Location()
+}
+
 // commentBox renders the float: category and location in the title, the
 // text with the cursor and the key hints below.
 func (m Model) commentBox() string {
 	d := m.draft
 	inner := max(1, min(floatWidth, m.width-boxChromeCols-gutterWidth))
-	loc := fmt.Sprintf("%s:%d", d.path, d.start)
-	if d.end != d.start {
-		loc += fmt.Sprintf("-%d", d.end)
-	}
-	title := m.categoryStyle(d.category).Bold(true).Render(string(d.category)) + "  " + loc
+	title := m.categoryStyle(d.category).Bold(true).Render(string(d.category)) + "  " + d.location()
 
 	cursor := lipgloss.NewStyle().Reverse(true)
 	var lines []string
@@ -303,23 +367,68 @@ func (m Model) commentBoxPosition(box string) (x, y int) {
 	return max(0, min(gutterWidth, m.contentWidth()-w)), y
 }
 
-// noteRows are the virtual rows of the comments ending on the new-file
-// line, attached to the file line index.
-func (m Model) noteRows(newLine, line int) []row {
-	if newLine == 0 {
-		return nil
+// noteRows are the virtual rows of the comments anchored to the line at
+// index line of the file fi: new-side comments below the new line they
+// end on, deleted-line comments below the old line they end on, and
+// file and global comments below the first line of their file (global
+// comments only in the first file).
+func (m Model) noteRows(fi, line int) []row {
+	f := m.files[fi]
+	l := f.Lines[line]
+	var rows []row
+	if l.New != 0 {
+		rows = append(rows, m.lineNotes(l.New, false, line)...)
 	}
-	// The text wraps after the gutter and the "▎ " bar.
-	width := max(1, m.contentWidth()-gutterWidth-2)
+	if l.Old != 0 {
+		rows = append(rows, m.lineNotes(l.Old, true, line)...)
+	}
+	if line == 0 {
+		rows = append(rows, m.fileNotes()...)
+	}
+	return rows
+}
+
+// lineNotes are the note rows of the line comments whose anchor ends on
+// the given line of the given side. The comments are the cached ones of
+// the current file.
+func (m Model) lineNotes(line int, old bool, attach int) []row {
 	var rows []row
 	for _, c := range m.fileComments {
-		if c.End != newLine {
-			continue
+		if c.Old == old && c.End == line {
+			rows = append(rows, m.noteRowLines(c, attach)...)
 		}
-		text := string(c.Category) + ": " + c.Text
-		for _, l := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
-			rows = append(rows, row{line: line, fold: -1, note: &note{category: c.Category, text: l, comment: c}})
+	}
+	return rows
+}
+
+// fileNotes are the note rows of the file comments of the current file
+// and, in the first file, of the global comments. They attach to the
+// first line of the file.
+func (m Model) fileNotes() []row {
+	var rows []row
+	path := m.files[m.fileIdx].Path
+	for _, c := range m.fileComments {
+		if c.Path == path && c.Start == 0 && c.End == 0 {
+			rows = append(rows, m.noteRowLines(c, 0)...)
 		}
+	}
+	if m.fileIdx == 0 {
+		for _, c := range m.globalComments {
+			rows = append(rows, m.noteRowLines(c, 0)...)
+		}
+	}
+	return rows
+}
+
+// noteRowLines are the wrapped text rows of one comment, attached to the
+// file line index line.
+func (m Model) noteRowLines(c review.Comment, line int) []row {
+	// The text wraps after the gutter and the "▎ " bar.
+	width := max(1, m.contentWidth()-gutterWidth-2)
+	text := string(c.Category) + ": " + c.Text
+	var rows []row
+	for _, l := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
+		rows = append(rows, row{line: line, fold: -1, note: &note{category: c.Category, text: l, comment: c}})
 	}
 	return rows
 }
@@ -333,9 +442,12 @@ type note struct {
 }
 
 // renderNote renders a comment row in the colour of its category,
-// indented past the gutter.
+// indented past the gutter. Done comments are dimmed.
 func (m Model) renderNote(n *note, cursor bool) string {
 	style := m.categoryStyle(n.category)
+	if n.comment.Status != review.Open {
+		style = m.theme.Styles.Fold
+	}
 	pad := lipgloss.NewStyle()
 	if cursor {
 		style = style.Background(m.theme.Styles.Cursor)
@@ -353,16 +465,167 @@ func (m Model) commentCount() string {
 	return fmt.Sprintf("%d comments", n)
 }
 
-// loadFileComments caches the comments of the current file for the
-// virtual rows.
+// loadFileComments caches the comments of the current file and the
+// global comments for the virtual rows.
 func (m *Model) loadFileComments() {
 	m.fileComments = nil
+	m.globalComments = nil
 	if len(m.files) == 0 {
 		return
 	}
+	path := m.files[m.fileIdx].Path
 	for _, c := range m.state.Comments() {
-		if c.Path == m.files[m.fileIdx].Path {
+		if c.Path == path {
 			m.fileComments = append(m.fileComments, c)
 		}
+		if c.Path == "" {
+			m.globalComments = append(m.globalComments, c)
+		}
 	}
+}
+
+// deleteComment deletes the comment under the cursor after confirmation:
+// the first dd only asks, other keys disarm the confirmation.
+func (m *Model) deleteComment() {
+	c, ok := m.commentAtCursor()
+	if !ok {
+		m.deleteArmed = false
+		m.fail("move the cursor to a comment to delete")
+		return
+	}
+	if !m.deleteArmed {
+		m.deleteArmed = true
+		m.message = "delete this comment? press dd again to confirm"
+		return
+	}
+	m.deleteArmed = false
+	m.state.DeleteComment(c.ID)
+	m.loadFileComments()
+	m.saveState()
+	m.message = "comment deleted"
+}
+
+// markDone marks the comment under the cursor as done; done comments
+// stay visible but are no longer exported.
+func (m *Model) markDone() {
+	c, ok := m.commentAtCursor()
+	if !ok {
+		m.fail("move the cursor to a comment to mark as done")
+		return
+	}
+	m.state.SetCommentStatus(c.ID, review.Done)
+	m.loadFileComments()
+	m.saveState()
+	m.message = "comment marked as done"
+}
+
+// commentPos is the position of a comment in the review: the file index
+// and the file line its note row is attached to.
+type commentPos struct {
+	c    review.Comment
+	file int
+	line int
+}
+
+// commentPositions lists every comment with a place in the current
+// review, in file order: global comments at the top of the first file,
+// file comments at the top of their file, line comments below the line
+// they end on. Comments whose file or line is gone are left out.
+func (m Model) commentPositions() []commentPos {
+	var pos []commentPos
+	for _, c := range m.state.Comments() {
+		fi := m.fileIdxOf(c.Path)
+		if c.Path == "" {
+			fi = 0
+		}
+		if fi < 0 {
+			continue // the file is no longer part of the review
+		}
+		line := 0
+		if c.Start != 0 || c.End != 0 {
+			line = m.lineIndex(m.files[fi], c.End, c.Old)
+			if line < 0 {
+				continue // the anchored line is no longer in the file
+			}
+		}
+		pos = append(pos, commentPos{c: c, file: fi, line: line})
+	}
+	slices.SortStableFunc(pos, func(a, b commentPos) int {
+		if c := cmp.Compare(a.file, b.file); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.line, b.line)
+	})
+	return pos
+}
+
+// fileIdxOf returns the index of the file with the path, -1 if the
+// review does not contain it.
+func (m Model) fileIdxOf(path string) int {
+	for i, f := range m.files {
+		if f.Path == path {
+			return i
+		}
+	}
+	return -1
+}
+
+// lineIndex returns the index of the line with the given number on the
+// given side (old for deleted lines), -1 if there is none.
+func (m Model) lineIndex(f diff.ReviewFile, n int, old bool) int {
+	for i, l := range f.Lines {
+		if old && l.Old == n || !old && l.New == n {
+			return i
+		}
+	}
+	return -1
+}
+
+// jumpToComment moves the cursor to the next (dir 1) or previous
+// (dir -1) comment, across files, and lands on its first note row.
+func (m *Model) jumpToComment(dir int) {
+	pos := m.commentPositions()
+	if len(pos) == 0 {
+		return
+	}
+	cur := commentPos{file: m.fileIdx, line: m.cursorLine()}
+	hit := -1
+	if dir > 0 {
+		for i, p := range pos {
+			if p.file > cur.file || p.file == cur.file && p.line > cur.line {
+				hit = i
+				break
+			}
+		}
+	} else {
+		for i, p := range pos {
+			if p.file < cur.file || p.file == cur.file && p.line < cur.line {
+				hit = i // keep the last match for backward jumps
+			}
+		}
+	}
+	if hit < 0 {
+		return
+	}
+	p := pos[hit]
+	if p.file != m.fileIdx {
+		m.fileIdx = p.file
+		m.resetFile()
+	}
+	if row := m.rowOfComment(p.c); row >= 0 {
+		m.cursor = row
+		m.scrollCursorIntoView()
+	}
+	m.visual = false
+}
+
+// rowOfComment returns the row of the first note line of the comment,
+// -1 if the comment has no note row in the current view.
+func (m Model) rowOfComment(c review.Comment) int {
+	for i, r := range m.rows() {
+		if r.note != nil && r.note.comment.ID == c.ID {
+			return i
+		}
+	}
+	return -1
 }

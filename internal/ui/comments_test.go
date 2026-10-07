@@ -186,16 +186,258 @@ func TestCommentsSurviveARestart(t *testing.T) {
 	}
 }
 
-// TestDeletedLinesCannotBeCommentedYet pins that a comment needs a line
-// of the new file: c on a deleted line reports instead of anchoring
-// somewhere else.
-func TestDeletedLinesCannotBeCommentedYet(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 60, 12)
+// TestCCommentsADeletedLine pins deleted-line comments: c on a deleted
+// line opens the float anchored in the old state, the title names the
+// old line with the (alt, entfernt) marker, and saving stores the old
+// anchor with the deleted line as quote, shown inline below the line.
+func TestCCommentsADeletedLine(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
 
 	m = press(m, "j", "c")
+	if s := screen(m); !strings.Contains(s, "main.go:2 (alt, entfernt)") {
+		t.Fatalf("float does not show the old anchor:\n%s", s)
+	}
+	m = typeText(m, "keep this line")
+	m = pressMsg(m, ctrl("s"))
 
-	if s := screen(m); strings.Contains(s, "<C-s>") || !strings.Contains(s, "deleted lines") {
-		t.Errorf("c on a deleted line opened the float or gave no hint:\n%s", s)
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("persisted %d comments, want 1", len(got))
+	}
+	c := got[0]
+	if !c.Old || c.Start != 2 || c.End != 2 || c.Quote != "old" || c.Text != "keep this line" {
+		t.Errorf("comment = %+v, want the old anchor on line 2", c)
+	}
+	if s := screen(m); !strings.Contains(s, "▎ should: keep this line") {
+		t.Errorf("comment not shown inline:\n%s", s)
+	}
+}
+
+// TestVSelectsDeletedLinesAndCommentsThem pins range comments on the
+// old side: a selection of deleted lines only anchors in the old state
+// and quotes the removed code.
+func TestVSelectsDeletedLinesAndCommentsThem(t *testing.T) {
+	dir := t.TempDir()
+	f := diff.New("gone.go", "a\nb\nc\nd\n", "a\nd\n")
+	m := start(ui.New([]diff.ReviewFile{f}, "main", themeFor, withState(dir)), 60, 12)
+
+	m = press(m, "j", "V", "j", "c")
+	if s := screen(m); !strings.Contains(s, "gone.go:2-3 (alt, entfernt)") {
+		t.Fatalf("float does not show the deleted range:\n%s", s)
+	}
+	m = typeText(m, "keep both")
+	pressMsg(m, ctrl("s"))
+
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("persisted %d comments, want 1", len(got))
+	}
+	if c := got[0]; !c.Old || c.Start != 2 || c.End != 3 || c.Quote != "b\nc" {
+		t.Errorf("comment = %+v", c)
+	}
+}
+
+// TestCCommentsAContextLine pins context comments: unchanged code can be
+// commented like changed lines, with its new line number.
+func TestCCommentsAContextLine(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
+
+	m = press(m, "c")
+	if s := screen(m); !strings.Contains(s, "main.go:1") {
+		t.Fatalf("float does not show the context anchor:\n%s", s)
+	}
+	m = typeText(m, "use the existing helper")
+	pressMsg(m, ctrl("s"))
+
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("persisted %d comments, want 1", len(got))
+	}
+	if c := got[0]; c.Start != 1 || c.End != 1 || c.Quote != "package main" || c.Old {
+		t.Errorf("comment = %+v, want the context line 1", c)
+	}
+}
+
+// TestCCommentsTheWholeFile pins file comments: C opens the float
+// without a line anchor, the title names the file, and the saved
+// comment covers the whole file without a quote, shown below the first
+// line.
+func TestCCommentsTheWholeFile(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
+
+	m = press(m, "C")
+	if s := screen(m); !strings.Contains(s, "main.go (Datei)") {
+		t.Fatalf("float does not show the file anchor:\n%s", s)
+	}
+	m = typeText(m, "split this file")
+	m = pressMsg(m, ctrl("s"))
+
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("persisted %d comments, want 1", len(got))
+	}
+	if c := got[0]; c.Path != "main.go" || c.Start != 0 || c.End != 0 || c.Quote != "" {
+		t.Errorf("comment = %+v, want a file comment", c)
+	}
+	if s := screen(m); !strings.Contains(s, "▎ should: split this file") {
+		t.Errorf("file comment not shown inline:\n%s", s)
+	}
+}
+
+// TestLeaderCCommentsTheWholeReview pins global comments: <leader>c
+// opens the float without a file, the title says global, and the saved
+// comment has no path; it is shown at the top of the first file only.
+func TestLeaderCCommentsTheWholeReview(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file, small}, "main", themeFor, withState(dir)), 60, 12)
+
+	m = press(leader(m), "c")
+	if s := screen(m); !strings.Contains(s, "global") {
+		t.Fatalf("float does not show the global anchor:\n%s", s)
+	}
+	m = typeText(m, "nice overall")
+	m = pressMsg(m, ctrl("s"))
+
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("persisted %d comments, want 1", len(got))
+	}
+	if c := got[0]; c.Path != "" || c.Start != 0 || c.End != 0 {
+		t.Errorf("comment = %+v, want a global comment", c)
+	}
+	if s := screen(m); !strings.Contains(s, "▎ should: nice overall") {
+		t.Errorf("global comment not shown inline:\n%s", s)
+	}
+
+	// The second file does not repeat the global comment.
+	m = press(m, "]", "f")
+	if s := screen(m); strings.Contains(s, "nice overall") {
+		t.Errorf("global comment shown in the second file:\n%s", s)
+	}
+}
+
+// TestCOnACommentEditsIt pins the edit flow: c on a comment row opens
+// the float with the comment's text; saving replaces the text and
+// category but keeps the anchor and the id.
+func TestCOnACommentEditsIt(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
+	m = press(m, "j", "j", "c")
+	m = typeText(m, "rename this")
+	m = pressMsg(m, ctrl("s"))
+	id := readState(t, dir).Comments()[0].ID
+
+	// The note row sits below the added line.
+	m = press(m, "j", "c")
+	if s := screen(m); !strings.Contains(s, "rename this") {
+		t.Fatalf("float does not show the existing text:\n%s", s)
+	}
+	m = tab(m)
+	m = typeText(m, " or reword")
+	pressMsg(m, ctrl("s"))
+
+	got := readState(t, dir).Comments()
+	if len(got) != 1 {
+		t.Fatalf("edit stored %d comments, want 1", len(got))
+	}
+	c := got[0]
+	if c.ID != id || c.Text != "rename this or reword" || c.Category != review.Must ||
+		c.Start != 2 || c.End != 2 || c.Quote != "new" {
+		t.Errorf("edited comment = %+v", c)
+	}
+}
+
+// TestDDDeletesACommentAfterConfirmation pins the delete flow: the
+// first dd only asks for confirmation, other keys disarm it, and the
+// next dd removes the comment.
+func TestDDDeletesACommentAfterConfirmation(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
+	m = press(m, "j", "j", "c")
+	m = typeText(m, "remove me")
+	m = pressMsg(m, ctrl("s"))
+	m = press(m, "j") // onto the note row
+
+	m = press(m, "d", "d")
+	if s := screen(m); !strings.Contains(s, "dd again") {
+		t.Fatalf("first dd does not ask for confirmation:\n%s", s)
+	}
+	if n := len(readState(t, dir).Comments()); n != 1 {
+		t.Fatalf("first dd removed the comment already")
+	}
+
+	// Other keys disarm the confirmation.
+	m = press(m, "j", "k", "d", "d")
+	if n := len(readState(t, dir).Comments()); n != 1 {
+		t.Fatalf("dd after other keys removed the comment")
+	}
+	if s := screen(m); !strings.Contains(s, "dd again") {
+		t.Errorf("dd after other keys does not ask again:\n%s", s)
+	}
+
+	m = press(m, "d", "d")
+	if n := len(readState(t, dir).Comments()); n != 0 {
+		t.Errorf("%d comments after the confirmed dd, want 0", n)
+	}
+	if s := screen(m); strings.Contains(s, "▎ should: remove me") {
+		t.Errorf("deleted comment still shown inline:\n%s", s)
+	}
+}
+
+// TestXMarksACommentAsDone pins the done marking: x sets the status, the
+// comment stays inline but dimmed, and review.md no longer lists it.
+func TestXMarksACommentAsDone(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, withState(dir)), 60, 12)
+	m = press(m, "j", "j", "c")
+	m = typeText(m, "fix this")
+	m = pressMsg(m, ctrl("s"))
+
+	m = press(m, "j", "x")
+	got := readState(t, dir).Comments()
+	if len(got) != 1 || got[0].Status != review.Done {
+		t.Fatalf("comment status = %+v, want done", got)
+	}
+	md, err := os.ReadFile(filepath.Join(dir, ".lgtm", "review.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(md), "fix this") {
+		t.Errorf("review.md still lists the done comment:\n%s", md)
+	}
+	row := rowContaining(m, "fix this")
+	if row == "" {
+		t.Fatalf("done comment no longer shown inline:\n%s", screen(m))
+	}
+	// The dim fold colour #565f89 replaces the should colour #e0af68.
+	if !strings.Contains(row, "38;2;86;95;137") || strings.Contains(row, "38;2;224;175;104") {
+		t.Errorf("done comment not dimmed: %q", row)
+	}
+}
+
+// TestNextCommentJumpsAcrossFiles pins ]k/[k: the keys jump to the next
+// and previous comment, also into the next file, and land on the
+// comment row.
+func TestNextCommentJumpsAcrossFiles(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file, small}, "main", themeFor, ui.Options{}), 60, 12)
+	m = press(m, "j", "j", "c")
+	m = typeText(m, "one")
+	m = pressMsg(m, ctrl("s"))
+	m = press(m, "]", "f")
+	m = press(m, "j", "c")
+	m = typeText(m, "two")
+	m = pressMsg(m, ctrl("s"))
+
+	m = press(m, "g", "g", "[", "k")
+	if s := screen(m); !strings.Contains(s, "main.go  1/2") || !strings.Contains(s, "▎ should: one") {
+		t.Fatalf("[k does not jump back to the comment of the previous file:\n%s", s)
+	}
+	m = press(m, "]", "k")
+	if s := screen(m); !strings.Contains(s, "small.txt  2/2") || !strings.Contains(s, "▎ should: two") {
+		t.Errorf("]k does not jump to the comment of the next file:\n%s", s)
 	}
 }
 

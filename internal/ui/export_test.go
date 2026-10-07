@@ -74,9 +74,9 @@ func TestYCopiesThePromptOfAllOpenComments(t *testing.T) {
 	for _, want := range []string{
 		"# Review feat/export (Basis: main, Runde 1)",
 		"## main.go",
-		"### must (Zeilen 1)",
+		"### must – main.go:1",
 		"Handle the error.",
-		"### question – nur beantworten, nichts ändern (Zeilen 3)",
+		"### question – nur beantworten, nichts ändern – main.go:3",
 		"Why end?",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -398,7 +398,7 @@ func TestColonLgtmApprovesWithoutComments(t *testing.T) {
 // TestHelpListsTheExportCommands pins that the help documents :lgtm and
 // the force quit.
 func TestHelpListsTheExportCommands(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 80, 40)
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 80, 46)
 
 	m = press(m, "?")
 	for _, want := range []string{":lgtm", ":q!", "Y", "yc"} {

@@ -124,6 +124,9 @@ type Model struct {
 	// quitArmed remembers that the quit warning was shown; the next q
 	// quits. Any other action disarms it.
 	quitArmed bool
+	// deleteArmed remembers that the delete confirmation was shown; the
+	// next dd deletes. Any other action disarms it.
+	deleteArmed bool
 	// quitOpen reports that open comments remained when the review
 	// ended; it becomes the exit code 1.
 	quitOpen bool
@@ -131,9 +134,11 @@ type Model struct {
 	approved bool
 
 	// draft is the comment being written while the float is open;
-	// fileComments caches the comments of the current file.
-	draft        draft
-	fileComments []review.Comment
+	// fileComments caches the comments of the current file,
+	// globalComments the comments on the whole review.
+	draft          draft
+	fileComments   []review.Comment
+	globalComments []review.Comment
 
 	// endVisible tells whether the end of the current file was visible
 	// after the last update; the read status is only set when it
@@ -286,9 +291,13 @@ func (m Model) dispatch(key string) (Model, tea.Cmd) {
 // the keys, 0 if none: motions repeat, line jumps go to line count.
 func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	// Any action except q cancels the quit warning, so the warning is
-	// for the next q only.
+	// for the next q only; any action except dd cancels the delete
+	// confirmation.
 	if a != actQuit {
 		m.quitArmed = false
+	}
+	if a != actDeleteComment {
+		m.deleteArmed = false
 	}
 	switch a {
 	case actQuit:
@@ -406,6 +415,22 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		m.toggleVisual()
 	case actComment:
 		m.openComment()
+	case actCommentFile:
+		m.openCommentFile()
+	case actCommentGlobal:
+		m.openCommentGlobal()
+	case actDeleteComment:
+		m.deleteComment()
+	case actMarkDone:
+		m.markDone()
+	case actNextComment, actPrevComment:
+		dir := 1
+		if a == actPrevComment {
+			dir = -1
+		}
+		for range n {
+			m.jumpToComment(dir)
+		}
 	}
 	m.scrollCursorIntoView()
 	return m, nil
@@ -604,20 +629,20 @@ func (m Model) fullRows(f diff.ReviewFile) []row {
 			if m.foldsOpen[fi] {
 				for ; i < f.Folds[fi].End; i++ {
 					rows = append(rows, row{line: i, fold: -1})
-					rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
+					rows = append(rows, m.noteRows(m.fileIdx, i)...)
 				}
 			} else {
 				// The comments inside a closed fold stay visible
 				// below its marker.
 				rows = append(rows, row{line: -1, fold: fi})
 				for ; i < f.Folds[fi].End; i++ {
-					rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
+					rows = append(rows, m.noteRows(m.fileIdx, i)...)
 				}
 			}
 			fi++
 		} else {
 			rows = append(rows, row{line: i, fold: -1})
-			rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
+			rows = append(rows, m.noteRows(m.fileIdx, i)...)
 			i++
 		}
 	}
@@ -625,14 +650,16 @@ func (m Model) fullRows(f diff.ReviewFile) []row {
 }
 
 // unifiedRows are the hunks of the classic unified diff view: section
-// headers plus the hunks expanded by the context window.
+// headers plus the hunks expanded by the context window. The file and
+// global comments sit at the top of the view.
 func (m Model) unifiedRows(f diff.ReviewFile) []row {
 	var rows []row
+	rows = append(rows, m.fileNotes()...)
 	for _, s := range f.Unified(contextWindow) {
 		rows = append(rows, row{line: s.Start, fold: -1, header: s.Header()})
 		for i := s.Start; i < s.End; i++ {
 			rows = append(rows, row{line: i, fold: -1})
-			rows = append(rows, m.noteRows(f.Lines[i].New, i)...)
+			rows = append(rows, m.noteRows(m.fileIdx, i)...)
 		}
 	}
 	return rows

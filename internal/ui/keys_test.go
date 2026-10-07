@@ -192,7 +192,7 @@ func TestQuestionMarkShowsTheFullHelp(t *testing.T) {
 }
 
 func TestHelpListsTheCommands(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor, ui.Options{}), 80, 40)
+	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor, ui.Options{}), 80, 46)
 
 	m = press(m, "?")
 	for _, want := range []string{":q", ":theme [name]", ":set [no]unified"} {
