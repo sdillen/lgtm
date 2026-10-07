@@ -6,6 +6,8 @@ package diff
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	zdiff "znkr.io/diff"
 )
@@ -19,12 +21,22 @@ const (
 	Deleted             // only present in the old version
 )
 
+// Word is one changed token within a changed line, for intra-line
+// highlighting. Start and End are byte offsets into the line's Text.
+type Word struct {
+	Start, End int // Text[Start:End]
+}
+
 // Line is one line of the full-file view. Old and New are 1-based line
 // numbers in the respective version, 0 if the line does not exist there.
 type Line struct {
 	Kind     Kind
 	Old, New int
 	Text     string
+	// Words are the changed tokens of a paired line, as byte offsets
+	// into Text. Context lines, unpaired changed lines and pairs whose
+	// token diff has no common token have no Words.
+	Words []Word
 }
 
 // Hunk is a maximal run of changed lines in ReviewFile.Lines.
@@ -93,12 +105,105 @@ func New(path, before, after string) ReviewFile {
 			lines = append(lines, Line{Kind: Added, New: e.PosY + 1, Text: trimEOL(e.Y)})
 		}
 	}
+	hunks := hunks(lines)
+	pairWords(lines, hunks)
 	return ReviewFile{
 		Path:  path,
 		Lines: lines,
-		Hunks: hunks(lines),
+		Hunks: hunks,
 		Folds: folds(lines),
 	}
+}
+
+// pairWords fills the Words of the changed lines. Within each hunk, every
+// added line is paired with the next unpaired deleted line before it; the
+// lines of a pair get the byte ranges of their changed tokens. A pair
+// whose token diff has no common token is not meaningful and gets no
+// ranges; lines without a partner get none either.
+func pairWords(lines []Line, hunks []Hunk) {
+	for _, h := range hunks {
+		var pending []int // indexes of unpaired deleted lines
+		for i := h.Start; i < h.End; i++ {
+			switch lines[i].Kind {
+			case Deleted:
+				pending = append(pending, i)
+			case Added:
+				if len(pending) == 0 {
+					continue
+				}
+				d := pending[0]
+				pending = pending[1:]
+				del, add, meaningful := changedRanges(tokenize(lines[d].Text), tokenize(lines[i].Text))
+				if !meaningful {
+					continue
+				}
+				lines[d].Words = del
+				lines[i].Words = add
+			}
+		}
+	}
+}
+
+// changedRanges computes the byte ranges of the changed tokens of a
+// paired line: the deleted tokens of the old line and the inserted tokens
+// of the new line. meaningful is false when the token diff has no common
+// token, i.e. the pairing does not correspond to an actual edit.
+func changedRanges(old, new []token) (del, add []Word, meaningful bool) {
+	edits := zdiff.EditsFunc(old, new, func(a, b token) bool { return a.text == b.text })
+	oi, ni := 0, 0
+	for _, e := range edits {
+		switch e.Op {
+		case zdiff.Match:
+			meaningful = true
+			oi++
+			ni++
+		case zdiff.Delete:
+			del = append(del, Word{Start: old[oi].start, End: old[oi].end})
+			oi++
+		case zdiff.Insert:
+			add = append(add, Word{Start: new[ni].start, End: new[ni].end})
+			ni++
+		}
+	}
+	return del, add, meaningful
+}
+
+// token is one token of a line: its text and byte span in the line.
+type token struct {
+	text       string
+	start, end int
+}
+
+// tokenize splits a line into tokens: maximal runs of word characters
+// (letters, digits, underscore) and each other non-space character
+// individually. Whitespace separates tokens and is not part of any token.
+func tokenize(line string) []token {
+	var toks []token
+	for i := 0; i < len(line); {
+		r, size := utf8.DecodeRuneInString(line[i:])
+		if unicode.IsSpace(r) {
+			i += size
+			continue
+		}
+		j := i + size
+		if wordRune(r) {
+			for j < len(line) {
+				r2, s2 := utf8.DecodeRuneInString(line[j:])
+				if !wordRune(r2) {
+					break
+				}
+				j += s2
+			}
+		}
+		toks = append(toks, token{text: line[i:j], start: i, end: j})
+		i = j
+	}
+	return toks
+}
+
+// wordRune reports whether r is a word character of the tokenizer.
+func wordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // hunks groups the changed lines into maximal runs.

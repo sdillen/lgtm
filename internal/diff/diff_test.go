@@ -2,6 +2,7 @@ package diff_test
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -190,6 +191,84 @@ func TestSectionHeaderRendersClassicHunkHeader(t *testing.T) {
 	}
 }
 
+func TestIntraLineWordsHighlightTheChangedTokensOfAPair(t *testing.T) {
+	got := diff.New("f.txt", "the quick brown fox\n", "the quick red fox\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Deleted, Old: 1, Text: "the quick brown fox", Words: []diff.Word{{Start: 10, End: 15}}},
+		{Kind: diff.Added, New: 1, Text: "the quick red fox", Words: []diff.Word{{Start: 10, End: 13}}},
+	})
+}
+
+func TestIntraLineWordsCoverSeveralChangedTokensPerLine(t *testing.T) {
+	got := diff.New("f.txt", "the quick brown fox\n", "the slow brown cat\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Deleted, Old: 1, Text: "the quick brown fox", Words: []diff.Word{{Start: 4, End: 9}, {Start: 16, End: 19}}},
+		{Kind: diff.Added, New: 1, Text: "the slow brown cat", Words: []diff.Word{{Start: 4, End: 8}, {Start: 15, End: 18}}},
+	})
+}
+
+func TestIntraLineWordsOfACompletelyReplacedPairAreMeaningless(t *testing.T) {
+	got := diff.New("f.txt", "aaa bbb\n", "ccc ddd\n")
+
+	// No token survives the replacement, so the pairing carries no
+	// information: neither line gets word ranges.
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Deleted, Old: 1, Text: "aaa bbb"},
+		{Kind: diff.Added, New: 1, Text: "ccc ddd"},
+	})
+}
+
+func TestIntraLineWordsPairABlockOfReplacedLinesInOrder(t *testing.T) {
+	got := diff.New("f.txt", "a\nbb bb\ncc cc\nd\n", "a\nbb XX\ncc YY\nd\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Context, Old: 1, New: 1, Text: "a"},
+		{Kind: diff.Deleted, Old: 2, Text: "bb bb", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Deleted, Old: 3, Text: "cc cc", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Added, New: 2, Text: "bb XX", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Added, New: 3, Text: "cc YY", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Context, Old: 4, New: 4, Text: "d"},
+	})
+}
+
+func TestIntraLineWordsSkipLinesWithoutAPartner(t *testing.T) {
+	// Two lines collapse into one: only the first deleted line pairs
+	// with the added line, the second stays without ranges.
+	got := diff.New("f.txt", "a\nbb bb\ncc cc\nd\n", "a\nbb XX\nd\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Context, Old: 1, New: 1, Text: "a"},
+		{Kind: diff.Deleted, Old: 2, Text: "bb bb", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Deleted, Old: 3, Text: "cc cc"},
+		{Kind: diff.Added, New: 2, Text: "bb XX", Words: []diff.Word{{Start: 3, End: 5}}},
+		{Kind: diff.Context, Old: 4, New: 3, Text: "d"},
+	})
+}
+
+func TestIntraLineWordsOfAPureInsertionHaveNoPair(t *testing.T) {
+	got := diff.New("f.txt", "a\n", "a\nnew line\n")
+
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Context, Old: 1, New: 1, Text: "a"},
+		{Kind: diff.Added, New: 2, Text: "new line"},
+	})
+}
+
+func TestIntraLineWordsUseRuneOffsetsIntoTheLineText(t *testing.T) {
+	before, after := "foo(bar) — grüß\n", "foo(baz) — grüß\n"
+	got := diff.New("f.txt", before, after)
+
+	// Byte offsets into the raw line, so multi-byte runes before the
+	// change do not shift the ranges.
+	want := strings.Index(before, "bar")
+	assertLines(t, got, []diff.Line{
+		{Kind: diff.Deleted, Old: 1, Text: "foo(bar) — grüß", Words: []diff.Word{{Start: want, End: want + 3}}},
+		{Kind: diff.Added, New: 1, Text: "foo(baz) — grüß", Words: []diff.Word{{Start: strings.Index(after, "baz"), End: strings.Index(after, "baz") + 3}}},
+	})
+}
+
 func TestStatsCountAddedAndDeletedLines(t *testing.T) {
 	got := diff.New("f.txt", "a\nb\nc\n", "a\nB\nc\nd\n")
 
@@ -252,7 +331,7 @@ func assertLines(t *testing.T, got diff.ReviewFile, want []diff.Line) {
 		t.Fatalf("got %d lines, want %d:\n got  %+v\n want %+v", len(got.Lines), len(want), got.Lines, want)
 	}
 	for i := range want {
-		if got.Lines[i] != want[i] {
+		if !reflect.DeepEqual(got.Lines[i], want[i]) {
 			t.Errorf("line %d = %+v, want %+v", i, got.Lines[i], want[i])
 		}
 	}
