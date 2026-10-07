@@ -130,6 +130,16 @@ func (f ReviewFile) Contents() (old, new string) {
 	return f.old, f.new
 }
 
+// SameChange reports whether f and g show the same change: the same
+// paths, contents, modes and submodule commits. View options such as
+// hidden whitespace changes do not count.
+func (f ReviewFile) SameChange(g ReviewFile) bool {
+	return f.Path == g.Path && f.OldPath == g.OldPath && f.Kind == g.Kind &&
+		f.old == g.old && f.new == g.new &&
+		f.OldMode == g.OldMode && f.NewMode == g.NewMode &&
+		f.OldSub == g.OldSub && f.NewSub == g.NewSub
+}
+
 // New computes the ReviewFile for path from the content before and after the
 // change. An empty before (after) stands for an added (deleted) file. The
 // change is classified: binary files become size-only info entries, generated

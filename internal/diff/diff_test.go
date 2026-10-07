@@ -373,3 +373,22 @@ func TestContentsReturnsBothVersions(t *testing.T) {
 		t.Errorf("Contents = %q, %q", old, new)
 	}
 }
+
+// TestSameChangeComparesWhatTheFileShows pins when two review files show
+// the same change: same path, rename source and contents; whitespace
+// display options do not matter.
+func TestSameChangeComparesWhatTheFileShows(t *testing.T) {
+	a := diff.New("f.go", "a\n", "b\n")
+	if !a.SameChange(diff.New("f.go", "a\n", "b\n").WithIgnoreWS(true)) {
+		t.Error("equal changes differ")
+	}
+	if a.SameChange(diff.New("f.go", "a\n", "c\n")) {
+		t.Error("changed content counts as the same change")
+	}
+	if a.SameChange(diff.New("g.go", "a\n", "b\n")) {
+		t.Error("another path counts as the same change")
+	}
+	if diff.Mode("x", 0o100644, 0o100755).SameChange(diff.Mode("x", 0o100644, 0o100644)) {
+		t.Error("another mode counts as the same change")
+	}
+}
