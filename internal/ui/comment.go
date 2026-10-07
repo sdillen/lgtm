@@ -534,9 +534,9 @@ type commentPos struct {
 func (m Model) commentPositions() []commentPos {
 	var pos []commentPos
 	for _, c := range m.state.Comments() {
-		fi := m.fileIdxOf(c.Path)
-		if c.Path == "" {
-			fi = 0
+		fi := 0
+		if c.Path != "" {
+			fi = m.fileIdxOf(c.Path)
 		}
 		if fi < 0 {
 			continue // the file is no longer part of the review
@@ -574,7 +574,7 @@ func (m Model) fileIdxOf(path string) int {
 // given side (old for deleted lines), -1 if there is none.
 func (m Model) lineIndex(f diff.ReviewFile, n int, old bool) int {
 	for i, l := range f.Lines {
-		if old && l.Old == n || !old && l.New == n {
+		if (old && l.Old == n) || (!old && l.New == n) {
 			return i
 		}
 	}
