@@ -7,7 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// openPicker opens the fuzzy file picker with an empty query.
+// openPicker opens the fuzzy file picker with an empty query, sliding
+// in from the bottom edge.
 func (m *Model) openPicker() {
 	m.pickerAll = false
 	m.pickerFiles = nil
@@ -15,6 +16,7 @@ func (m *Model) openPicker() {
 	m.pickerQuery = ""
 	m.pickerSel = 0
 	m.pickerMatches = m.allFileIndexes()
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // pickerKey handles keys while the picker is open: text edits the fuzzy

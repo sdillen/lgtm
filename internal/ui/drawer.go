@@ -8,10 +8,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// openDrawer opens the file drawer on the current file.
+// openDrawer opens the file drawer on the current file, sliding in
+// from the top edge.
 func (m *Model) openDrawer() {
 	m.mode = modeDrawer
 	m.drawerCursor = m.rowOfFile(m.fileIdx)
+	m.startSlideOverlay(-m.bodyHeight())
 }
 
 // drawerKey handles keys while the drawer is open: j/k move the
@@ -62,9 +64,6 @@ func (m Model) rowOfFile(fi int) int {
 	return -1
 }
 
-// treeLines renders the file tree rows. highlight is the row shown with
-// the cursor background, -1 for none. Read files carry a checkmark,
-// commented files a dot, files changed since the previous round a Δ.
 func (m Model) treeLines(highlight int) []string {
 	lines := make([]string, len(m.tree))
 	for i, r := range m.tree {

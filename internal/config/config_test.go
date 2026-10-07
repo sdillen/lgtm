@@ -126,3 +126,30 @@ func TestLoadRejectsNonStringKeyBindings(t *testing.T) {
 		t.Fatal("numeric key binding loaded, want an error")
 	}
 }
+
+func TestLoadParsesTheSmoothScrollSetting(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("smooth_scroll = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SmoothScroll == nil {
+		t.Fatal("SmoothScroll = nil, want false")
+	}
+	if *cfg.SmoothScroll {
+		t.Error("SmoothScroll = true, want false")
+	}
+}
+
+func TestLoadWithoutSmoothScrollSettingMeansTheDefault(t *testing.T) {
+	cfg, err := config.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SmoothScroll != nil {
+		t.Errorf("SmoothScroll = %v, want nil (the default)", *cfg.SmoothScroll)
+	}
+}

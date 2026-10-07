@@ -79,6 +79,10 @@ type Options struct {
 	// Snapshot records the reviewed state again after R, so the
 	// snapshot of the round is what the reviewer saw; nil disables it.
 	Snapshot func() error
+	// Animate turns the smooth scroll of half-page moves and jumps and
+	// the slide-in of the overlays on; nil means off. The command
+	// enables it unless the config turns it off.
+	Animate *bool
 }
 
 // mode is what key presses go to.
@@ -242,6 +246,11 @@ type Model struct {
 	// resuming tells that the position where the review was left is
 	// still to be restored; that needs the terminal size.
 	resuming bool
+
+	// smooth is the active smooth scroll (nil when idle), slide the
+	// active overlay slide-in; both tick on frameMsg.
+	smooth *scrollTween
+	slide  *slideTween
 }
 
 // rowsCache is the cached row list of rows().
@@ -281,14 +290,13 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		opts.State = review.NewState()
 	}
 	m := Model{
-		files:     files,
-		label:     label,
-		theme:     th,
-		opts:      opts,
-		keys:      opts.Keymap.Dispatcher(),
-		state:     opts.State,
-		dir:       opts.Dir,
-		rowsCache: &rowsCache{},
+		files: files,
+		label: label,
+		theme: th,
+		opts:  opts,
+		keys:  opts.Keymap.Dispatcher(),
+		state: opts.State,
+		dir:   opts.Dir,
 	}
 	m.full = files
 	m.loadInterdiff()
@@ -353,6 +361,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		// Comment rows wrap at the width.
 		m.invalidateRows()
+		m.finishAnims()
 		if m.resuming {
 			m.resuming = false
 			m.resumePosition()
@@ -360,9 +369,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clamp()
 		m.clampHelp()
 		m.maybeMarkRead()
+	case frameMsg:
+		m.stepFrames()
+		return m, m.animCmd()
 	case whichKeyMsg:
 		if msg.gen == m.keyGen && m.keys.InPrefix() {
 			m.whichKey = true
+			m.startSlideOverlay(m.bodyHeight())
+			return m, m.animCmd()
 		}
 	case approveMsg:
 		return m, tea.Quit
@@ -376,6 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitOpen = len(m.state.OpenComments()) > 0
 			return m, tea.Quit
 		}
+		m.finishAnims()
 		m.keyGen++
 		m.whichKey = false
 		m.message, m.messageErr = "", false
@@ -461,7 +476,8 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		return m, nil
 	case actHelp:
 		m.mode, m.helpOffset = modeHelp, 0
-		return m, nil
+		m.startSlideOverlay(m.bodyHeight())
+		return m, m.animCmd()
 	case actCmdline:
 		m.mode, m.cmdline = modeCmdline, ""
 		return m, nil
@@ -472,15 +488,15 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		if len(m.files) > 0 {
 			m.openDrawer()
 		}
-		return m, nil
+		return m, m.animCmd()
 	case actPicker:
 		if len(m.files) > 0 {
 			m.openPicker()
 		}
-		return m, nil
+		return m, m.animCmd()
 	case actPickFileAll:
 		m.openPickerAll()
-		return m, nil
+		return m, m.animCmd()
 	case actToggleRead:
 		if m.context == nil && len(m.files) > 0 {
 			m.toggleRead()
@@ -546,34 +562,46 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	case actHalfDown:
 		half := max(1, m.bodyHeight()/2)
 		rows := m.rows()
-		m.offset = min(m.offset+n*half, max(0, len(rows)-m.bodyHeight()))
-		m.cursor = min(m.cursor+n*half, max(0, len(rows)-1))
+		m.animate(func() {
+			m.offset = min(m.offset+n*half, max(0, len(rows)-m.bodyHeight()))
+			m.cursor = min(m.cursor+n*half, max(0, len(rows)-1))
+		})
 	case actHalfUp:
 		half := max(1, m.bodyHeight()/2)
-		m.offset = max(m.offset-n*half, 0)
-		m.cursor = max(m.cursor-n*half, 0)
+		m.animate(func() {
+			m.offset = max(m.offset-n*half, 0)
+			m.cursor = max(m.cursor-n*half, 0)
+		})
 	case actTop:
-		if count > 0 {
-			m.jumpToLine(min(count-1, lastLine))
-		} else {
-			m.jumpToLine(0)
-		}
+		m.animate(func() {
+			if count > 0 {
+				m.jumpToLine(min(count-1, lastLine))
+			} else {
+				m.jumpToLine(0)
+			}
+		})
 	case actBottom:
-		if count > 0 {
-			m.jumpToLine(min(count-1, lastLine))
-		} else {
-			m.jumpToLine(lastLine)
-		}
+		m.animate(func() {
+			if count > 0 {
+				m.jumpToLine(min(count-1, lastLine))
+			} else {
+				m.jumpToLine(lastLine)
+			}
+		})
 	case actCenter:
-		if count > 0 {
-			m.cursor = m.rowOfLine(min(count-1, lastLine))
-		}
-		m.offset = m.cursor - m.bodyHeight()/2
+		m.animate(func() {
+			if count > 0 {
+				m.cursor = m.rowOfLine(min(count-1, lastLine))
+			}
+			m.offset = m.cursor - m.bodyHeight()/2
+		})
 	case actCursorTop:
-		if count > 0 {
-			m.cursor = m.rowOfLine(min(count-1, lastLine))
-		}
-		m.offset = m.cursor
+		m.animate(func() {
+			if count > 0 {
+				m.cursor = m.rowOfLine(min(count-1, lastLine))
+			}
+			m.offset = m.cursor
+		})
 	case actFoldOpen:
 		if m.fileCollapsed[m.fileIdx] {
 			m.fileCollapsed[m.fileIdx] = false
@@ -611,9 +639,11 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		if a == actPrevHunk {
 			dir = -1
 		}
-		for range n {
-			m.jumpToHunk(dir)
-		}
+		m.animate(func() {
+			for range n {
+				m.jumpToHunk(dir)
+			}
+		})
 	case actNextFile, actPrevFile:
 		dir := 1
 		if a == actPrevFile {
@@ -643,12 +673,16 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		if a == actPrevComment {
 			dir = -1
 		}
-		for range n {
-			m.jumpToComment(dir)
-		}
+		m.animate(func() {
+			for range n {
+				m.jumpToComment(dir)
+			}
+		})
 	}
-	m.scrollCursorIntoView()
-	return m, nil
+	if m.smooth == nil {
+		m.scrollCursorIntoView()
+	}
+	return m, m.animCmd()
 }
 
 // quitAction ends the review: with open comments the first q only warns
@@ -1062,7 +1096,8 @@ func (m Model) emptyView() string {
 
 // fileView renders the file rows and the bottom line, with the sidebar
 // beside them when it is on. With wrap on the rows are soft-wrapped
-// instead of truncated.
+// instead of truncated. The minimap strip sits at the right edge of
+// the file area.
 func (m Model) fileView() string {
 	width := m.contentWidth()
 	var b strings.Builder

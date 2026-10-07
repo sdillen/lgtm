@@ -29,6 +29,10 @@ type Config struct {
 	// top = "<home>" or down = ["j", "<down>"]. An empty list unbinds
 	// the action.
 	Keys map[string]KeySeqs `toml:"keys"`
+
+	// SmoothScroll disables the animated scrolling of half-page moves
+	// and jumps when set to false; nil means on.
+	SmoothScroll *bool `toml:"smooth_scroll"`
 }
 
 // KeySeqs are the key sequences of one action. In TOML they are a single

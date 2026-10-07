@@ -115,6 +115,13 @@ func run(dir string, args []string) (int, error) {
 	if err != nil {
 		return exitError, fmt.Errorf("config: %w", err)
 	}
+	// The animations (smooth scroll, overlay slide-in) are on by
+	// default; the config turns them off. The start screen is part of
+	// the startup.
+	animate := true
+	if cfg.SmoothScroll != nil {
+		animate = *cfg.SmoothScroll
+	}
 	src, err := source.Open(dir)
 	if err != nil {
 		return exitError, err
@@ -189,6 +196,7 @@ func run(dir string, args []string) (int, error) {
 		Reload:    reload,
 		Interdiff: interdiff,
 		Snapshot:  snapshot,
+		Animate:   &animate,
 	}))
 	if err != nil {
 		return exitError, err

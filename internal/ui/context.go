@@ -53,6 +53,7 @@ func (m *Model) openPickerAll() {
 	for i := range files {
 		m.pickerMatches[i] = i
 	}
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // pickFile opens the picker entry: a review file or, in the all-files
@@ -417,7 +418,8 @@ func (m *Model) gotoDef() {
 	}
 }
 
-// openResults shows the hits of gr or gd as a navigable list.
+// openResults shows the hits of gr or gd as a navigable list, sliding
+// in from the bottom edge.
 func (m *Model) openResults(title string, hits []search.Hit) {
 	if len(hits) == 0 {
 		return
@@ -426,6 +428,7 @@ func (m *Model) openResults(title string, hits []search.Hit) {
 	m.results = hits
 	m.resultSel = 0
 	m.mode = modeResults
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // resultsKey handles keys while the result list is open: j/k move the
@@ -548,9 +551,6 @@ func (m Model) viewRows() int {
 	return len(m.rows())
 }
 
-// contextView renders the lines of the context file and the bottom
-// line, horizontally scrolled like the review view; with wrap on the
-// lines are soft-wrapped instead.
 func (m Model) contextView() string {
 	width := m.contentWidth()
 	m.context.hl.ensureNew(m.offset + m.bodyHeight() + highlightBuffer)

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -170,44 +172,76 @@ func (m Model) box(title string, lines []string) string {
 		Render(strings.Join(body, "\n"))
 }
 
-// withOverlay draws the open overlay over the rendered view: the help
-// centred, which-key and the picker at the bottom right, the drawer at
-// the top left.
-func (m Model) withOverlay(view string) string {
-	if m.bodyHeight() < boxChromeRows+1 || m.width < boxChromeCols+1 {
-		return view
-	}
-	var box string
-	var x, y int
+// overlayBox is the box of the open overlay and its final position:
+// the start screen, the approval moment and the help centred, the
+// drawer at the top left, the comment float at the cursor, which-key
+// and the picker at the bottom right. ok is false when no overlay is
+// open.
+func (m Model) overlayBox() (box string, x, y int, ok bool) {
 	switch {
 	case m.mode == modeHelp:
 		box = m.helpBox()
 		w, h := lipgloss.Size(box)
-		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+		return box, max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2), true
 	case m.mode == modeDrawer:
 		box = m.drawerBox()
 		_, h := lipgloss.Size(box)
-		x, y = 0, max(0, (m.bodyHeight()-h)/2)
+		return box, 0, max(0, (m.bodyHeight()-h)/2), true
 	case m.mode == modePicker:
 		box = m.pickerBox()
 		w, h := lipgloss.Size(box)
-		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+		return box, max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2), true
 	case m.mode == modeResults:
 		box = m.resultsBox()
 		w, h := lipgloss.Size(box)
-		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+		return box, max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2), true
 	case m.mode == modeComment:
 		box = m.commentBox()
 		x, y = m.commentBoxPosition(box)
+		return box, x, y, true
 	case m.whichKey:
 		box = m.whichKeyBox()
 		w, h := lipgloss.Size(box)
-		x, y = max(0, m.width-w), max(0, m.bodyHeight()-h)
-	default:
+		return box, max(0, m.width-w), max(0, m.bodyHeight()-h), true
+	}
+	return "", 0, 0, false
+}
+
+// withOverlay draws the open overlay over the rendered view, dimming
+// the view behind it: the start screen, the approval moment and the
+// help centred, which-key and the picker at the bottom right, the
+// drawer at the top left.
+func (m Model) withOverlay(view string) string {
+	if m.bodyHeight() < boxChromeRows+1 || m.width < boxChromeCols+1 {
 		return view
 	}
+	box, x, y, ok := m.overlayBox()
+	if !ok {
+		return view
+	}
+	// The scrim darkens the view behind the overlay, so the box reads
+	// as a layer above the code.
+	view = dimView(view)
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(view),
-		lipgloss.NewLayer(box).X(x).Y(y).Z(1),
+		lipgloss.NewLayer(box).X(x).Y(m.overlayY(y)).Z(1),
 	).Render()
+}
+
+// dimSGR matches the truecolour SGR sequences of the rendered view.
+var dimSGR = regexp.MustCompile(`\x1b\[(38|48);2;(\d+);(\d+);(\d+)m`)
+
+// dimView dims every colour of the rendered view to 55%, the scrim
+// behind an open overlay. The text and the layout stay untouched, so
+// the box drawn over it keeps its full brightness. 256-colour and
+// indexed sequences keep their colour: on terminals without truecolor
+// the scrim is a no-op.
+func dimView(view string) string {
+	return dimSGR.ReplaceAllStringFunc(view, func(s string) string {
+		g := dimSGR.FindStringSubmatch(s)
+		r, _ := strconv.Atoi(g[2])
+		gr, _ := strconv.Atoi(g[3])
+		b, _ := strconv.Atoi(g[4])
+		return fmt.Sprintf("\x1b[%s;2;%d;%d;%dm", g[1], r*55/100, gr*55/100, b*55/100)
+	})
 }

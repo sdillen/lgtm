@@ -80,7 +80,8 @@ func (m Model) selected(line int) bool {
 // openComment opens the float for the selection or the cursor line. On
 // a comment row it edits the comment instead. The anchor is the range
 // of lines it covers: new-file lines by default, the old lines when the
-// selection covers only deleted lines.
+// selection covers only deleted lines. The float slides in from the
+// bottom edge.
 func (m *Model) openComment() {
 	if r := m.rows()[m.cursor]; r.note != nil && !m.visual {
 		m.openEdit(r.note.comment)
@@ -140,6 +141,7 @@ func (m *Model) openComment() {
 		category: review.DefaultCategory,
 	}
 	m.mode = modeComment
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // openCommentFile opens the float for a comment on the whole current
@@ -147,12 +149,14 @@ func (m *Model) openComment() {
 func (m *Model) openCommentFile() {
 	m.draft = draft{path: m.files[m.fileIdx].Path, category: review.DefaultCategory}
 	m.mode = modeComment
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // openCommentGlobal opens the float for a comment on the whole review.
 func (m *Model) openCommentGlobal() {
 	m.draft = draft{category: review.DefaultCategory}
 	m.mode = modeComment
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // openEdit opens the float with the text and category of the existing
@@ -170,6 +174,7 @@ func (m *Model) openEdit(c review.Comment) {
 		editID:   c.ID,
 	}
 	m.mode = modeComment
+	m.startSlideOverlay(m.bodyHeight())
 }
 
 // commentKey edits the draft with minimal vim bindings. It starts in
