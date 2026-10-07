@@ -20,6 +20,40 @@ type Config struct {
 	// theme from the themes/ directory. Empty means automatic
 	// light/dark detection.
 	Theme string `toml:"theme"`
+
+	// Leader is the leader key in vim notation, e.g. "," or "<space>".
+	// Empty means the default <space>.
+	Leader string `toml:"leader"`
+
+	// Keys rebinds actions to key sequences in vim notation, e.g.
+	// top = "<home>" or down = ["j", "<down>"]. An empty list unbinds
+	// the action.
+	Keys map[string]KeySeqs `toml:"keys"`
+}
+
+// KeySeqs are the key sequences of one action. In TOML they are a single
+// string or an array of strings.
+type KeySeqs []string
+
+// UnmarshalTOML accepts a string or an array of strings.
+func (k *KeySeqs) UnmarshalTOML(v any) error {
+	switch v := v.(type) {
+	case string:
+		*k = KeySeqs{v}
+		return nil
+	case []any:
+		seqs := make(KeySeqs, 0, len(v))
+		for _, e := range v {
+			s, ok := e.(string)
+			if !ok {
+				return fmt.Errorf("key binding %v: want a string", e)
+			}
+			seqs = append(seqs, s)
+		}
+		*k = seqs
+		return nil
+	}
+	return fmt.Errorf("key binding %v: want a string or an array of strings", v)
 }
 
 // Dir returns the lgtm config directory: $XDG_CONFIG_HOME/lgtm, or

@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,5 +86,43 @@ func TestLoadMalformedConfigFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "config") {
 		t.Errorf("err = %v, want a config error", err)
+	}
+}
+
+func TestLoadParsesLeaderAndKeyBindings(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(`leader = ","
+
+[keys]
+top = "<home>"
+down = ["j", "<down>"]
+up = []
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Leader != "," {
+		t.Errorf("Leader = %q, want ,", cfg.Leader)
+	}
+	want := map[string]config.KeySeqs{
+		"top":  {"<home>"},
+		"down": {"j", "<down>"},
+		"up":   {},
+	}
+	if !reflect.DeepEqual(cfg.Keys, want) {
+		t.Errorf("Keys = %#v, want %#v", cfg.Keys, want)
+	}
+}
+
+func TestLoadRejectsNonStringKeyBindings(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[keys]\ntop = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.Load(dir); err == nil {
+		t.Fatal("numeric key binding loaded, want an error")
 	}
 }
