@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/go-git/go-billy/v6"
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -26,17 +27,27 @@ const (
 )
 
 // File is one changed file. Old is empty for added files, New is empty for
-// deleted files.
+// deleted files. Submodule marks a gitlink change, whose Old and New hold
+// the commit hashes; OldMode and NewMode carry the file modes of a
+// mode-only change.
 type File struct {
 	Path     string
 	Status   Status
 	Old, New string
+
+	Submodule bool
+	OldMode   uint32
+	NewMode   uint32
 }
 
 // Changes is a resolved review subject.
 type Changes struct {
 	Base  string // short name of the ref the old version is based on
 	Files []File // sorted by path
+	// GitAttributes is the content of the .gitattributes of the
+	// reviewed state, empty when it has none. The diff module parses
+	// it for linguist-generated paths.
+	GitAttributes string
 }
 
 // Source reads review subjects from a git repository.
@@ -189,7 +200,16 @@ func (s *Source) Default() (Changes, error) {
 	if err != nil {
 		return Changes{}, err
 	}
-	return Changes{Base: baseRef.Name().Short(), Files: files}, nil
+	attrs, _, err := s.worktreeAttrs()
+	if err != nil {
+		return Changes{}, err
+	}
+	if attrs == "" {
+		// The .gitattributes may be committed without reaching the
+		// working tree, e.g. after a fresh clone.
+		attrs, _, _ = s.headAttrs()
+	}
+	return Changes{Base: baseRef.Name().Short(), Files: files, GitAttributes: attrs}, nil
 }
 
 // Range resolves a..b: the changes between the trees of the two refs, i.e.
@@ -216,7 +236,11 @@ func (s *Source) Range(a, b string) (Changes, error) {
 	if err != nil {
 		return Changes{}, err
 	}
-	return Changes{Base: a, Files: files}, nil
+	attrs, _, err := treeContent(bTree, ".gitattributes")
+	if err != nil {
+		return Changes{}, err
+	}
+	return Changes{Base: a, Files: files, GitAttributes: attrs}, nil
 }
 
 // Commit resolves rev: the changes of exactly that commit against its
@@ -249,7 +273,11 @@ func (s *Source) Commit(rev string) (Changes, error) {
 	if err != nil {
 		return Changes{}, err
 	}
-	return Changes{Base: base, Files: files}, nil
+	attrs, _, err := treeContent(tree, ".gitattributes")
+	if err != nil {
+		return Changes{}, err
+	}
+	return Changes{Base: base, Files: files, GitAttributes: attrs}, nil
 }
 
 // resolveCommit resolves rev (branch, tag, hash, HEAD~n, …) to a commit,
@@ -278,25 +306,170 @@ func diffTrees(oldTree, newTree *object.Tree) ([]File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("diff trees: %w", err)
 	}
+	return treeChanges(changes, oldTree, newTree)
+}
+
+// treeChanges turns the tree changes into file entries. Submodule
+// changes carry the commit hashes instead of contents, and mode-only
+// changes carry the two modes.
+func treeChanges(changes object.Changes, oldTree, newTree *object.Tree) ([]File, error) {
 	var files []File
 	for _, c := range changes {
 		path := c.To.Name
 		if path == "" {
 			path = c.From.Name
 		}
-		old, inOld, err := treeContent(oldTree, path)
+		oldMode, newMode := c.From.TreeEntry.Mode, c.To.TreeEntry.Mode
+		if oldMode == filemode.Submodule || newMode == filemode.Submodule {
+			old, new := "", ""
+			if oldMode == filemode.Submodule {
+				old = c.From.TreeEntry.Hash.String()
+			}
+			if newMode == filemode.Submodule {
+				new = c.To.TreeEntry.Hash.String()
+			}
+			files = append(files, File{
+				Path:      path,
+				Status:    submoduleStatus(oldMode, newMode),
+				Submodule: true,
+				Old:       old,
+				New:       new,
+			})
+			continue
+		}
+		old, oldMode, inOld, err := treeEntry(oldTree, path)
 		if err != nil {
 			return nil, err
 		}
-		new, inNew, err := treeContent(newTree, path)
+		new, newMode, inNew, err := treeEntry(newTree, path)
 		if err != nil {
 			return nil, err
 		}
-		if f, changed := fileFor(path, old, inOld, new, inNew); changed {
+		if f, changed := entryFile(path, old, oldMode, inOld, new, newMode, inNew); changed {
 			files = append(files, f)
 		}
 	}
 	return files, nil
+}
+
+// submoduleStatus is the status of a gitlink change: added when only the
+// new side has the link, deleted when only the old side has it.
+func submoduleStatus(oldMode, newMode filemode.FileMode) Status {
+	switch {
+	case oldMode != filemode.Submodule:
+		return Added
+	case newMode != filemode.Submodule:
+		return Deleted
+	default:
+		return Modified
+	}
+}
+
+// entryFile builds the File entry for a path, reporting whether the
+// change is worth showing: the contents differ, a side is missing, or
+// only the file mode changed.
+func entryFile(path, old string, oldMode filemode.FileMode, inOld bool, new string, newMode filemode.FileMode, inNew bool) (File, bool) {
+	switch {
+	case inOld && inNew && old == new && oldMode != newMode && oldMode != 0 && newMode != 0:
+		return File{Path: path, Status: Modified, Old: old, New: new, OldMode: uint32(oldMode), NewMode: uint32(newMode)}, true
+	case inOld && inNew && old != new:
+		return File{Path: path, Status: Modified, Old: old, New: new}, true
+	case !inOld && inNew:
+		return File{Path: path, Status: Added, New: new}, true
+	case inOld && !inNew:
+		return File{Path: path, Status: Deleted, Old: old}, true
+	}
+	return File{}, false
+}
+
+// treeEntry reads the content and mode of path in tree. For a gitlink
+// entry the content is the commit hash the link points at; treeContent
+// would try to read it as a blob and fail.
+func treeEntry(tree *object.Tree, path string) (content string, mode filemode.FileMode, ok bool, err error) {
+	e, err := tree.FindEntry(path)
+	if errors.Is(err, object.ErrEntryNotFound) || errors.Is(err, object.ErrFileNotFound) || errors.Is(err, object.ErrDirectoryNotFound) {
+		return "", filemode.Empty, false, nil
+	}
+	if err != nil {
+		return "", filemode.Empty, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	if e.Mode == filemode.Submodule {
+		return e.Hash.String(), e.Mode, true, nil
+	}
+	f, err := tree.TreeEntryFile(e)
+	if err != nil {
+		return "", filemode.Empty, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	content, err = f.Contents()
+	if err != nil {
+		return "", filemode.Empty, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	return content, e.Mode, true, nil
+}
+
+// fsEntry reads the content and mode of path from the working tree.
+// Like git, a symlink's target is the content. A submodule directory
+// yields the commit hash it checks out, from the subHashes map.
+func fsEntry(fs billy.Filesystem, path string, subHashes map[string]plumbing.Hash) (content string, mode filemode.FileMode, ok bool, err error) {
+	fi, err := fs.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", filemode.Empty, false, nil
+	}
+	if err != nil {
+		return "", filemode.Empty, false, err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := fs.Readlink(path)
+		if err != nil {
+			return "", filemode.Empty, false, err
+		}
+		return target, filemode.Symlink, true, nil
+	}
+	if fi.IsDir() {
+		if h, isSub := subHashes[path]; isSub {
+			return h.String(), filemode.Submodule, true, nil
+		}
+		return "", filemode.Empty, false, nil
+	}
+	if !fi.Mode().IsRegular() {
+		return "", filemode.Empty, false, nil
+	}
+	f, err := fs.Open(path)
+	if err != nil {
+		return "", filemode.Empty, false, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return "", filemode.Empty, false, err
+	}
+	mode = filemode.Regular
+	if fi.Mode()&0o111 != 0 {
+		mode = filemode.Executable
+	}
+	return string(b), mode, true, nil
+}
+
+// worktreeAttrs reads the .gitattributes of the working tree.
+func (s *Source) worktreeAttrs() (string, bool, error) {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return "", false, fmt.Errorf("open working tree: %w", err)
+	}
+	return fsContent(wt.Filesystem(), ".gitattributes")
+}
+
+// headAttrs reads the .gitattributes of the HEAD tree.
+func (s *Source) headAttrs() (string, bool, error) {
+	head, err := s.headCommit()
+	if err != nil {
+		return "", false, err
+	}
+	tree, err := head.Tree()
+	if err != nil {
+		return "", false, fmt.Errorf("read HEAD tree: %w", err)
+	}
+	return treeContent(tree, ".gitattributes")
 }
 
 // defaultBranch finds the default branch: the HEAD of a remote (origin
@@ -336,9 +509,9 @@ func (s *Source) headCommit() (*object.Commit, error) {
 	return c, nil
 }
 
-// workingTreeChanges compares base with the working tree. Candidates are the
-// paths changed by commits since base plus those changed in the working
-// tree; files whose content ends up unchanged are dropped.
+// workingTreeChanges compares base with the working tree. The committed
+// part comes from the trees, the uncommitted part overlays the working
+// tree status on top; files whose content ends up unchanged are dropped.
 func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]File, error) {
 	wt, err := s.repo.Worktree()
 	if err != nil {
@@ -352,55 +525,76 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 	if err != nil {
 		return nil, fmt.Errorf("diff merge base with HEAD: %w", err)
 	}
+	files, err := treeChanges(committed, base, headTree)
+	if err != nil {
+		return nil, err
+	}
+
 	status, err := wt.Status()
 	if err != nil {
 		return nil, fmt.Errorf("working tree status: %w", err)
 	}
-
-	paths := map[string]bool{}
-	for _, c := range committed {
-		if c.From.Name != "" {
-			paths[c.From.Name] = true
-		}
-		if c.To.Name != "" {
-			paths[c.To.Name] = true
-		}
-	}
+	var dirty []string
 	for p, st := range status {
 		if st.Staging != git.Unmodified || st.Worktree != git.Unmodified {
-			paths[p] = true
+			dirty = append(dirty, p)
 		}
 	}
+	if len(dirty) == 0 {
+		return files, nil
+	}
+	slices.Sort(dirty)
 
-	var files []File
-	for _, p := range slices.Sorted(maps.Keys(paths)) {
-		old, inOld, err := treeContent(base, p)
+	subs, err := wt.Submodules()
+	if err != nil {
+		return nil, fmt.Errorf("list submodules: %w", err)
+	}
+	subStatus, err := subs.Status()
+	if err != nil {
+		return nil, fmt.Errorf("read submodule status: %w", err)
+	}
+	subHashes := make(map[string]plumbing.Hash, len(subStatus))
+	for _, s := range subStatus {
+		current := s.Current
+		if current.IsZero() {
+			current = s.Expected
+		}
+		subHashes[s.Path] = current
+	}
+
+	dirtyIndex := make(map[string]bool, len(dirty))
+	for _, p := range dirty {
+		dirtyIndex[p] = true
+	}
+	// The dirty entries replace the committed ones: a reverted change
+	// disappears, an uncommitted edit is the new truth.
+	files = slices.DeleteFunc(files, func(f File) bool { return dirtyIndex[f.Path] })
+	for _, p := range dirty {
+		old, oldMode, inOld, err := treeEntry(base, p)
 		if err != nil {
 			return nil, err
 		}
-		cur, inNew, err := fsContent(wt.Filesystem(), p)
+		cur, newMode, inNew, err := fsEntry(wt.Filesystem(), p, subHashes)
 		if err != nil {
 			return nil, fmt.Errorf("read %s from working tree: %w", p, err)
 		}
-		if f, changed := fileFor(p, old, inOld, cur, inNew); changed {
+		if oldMode == filemode.Submodule || newMode == filemode.Submodule {
+			switch {
+			case inOld && inNew && old != cur:
+				files = append(files, File{Path: p, Status: Modified, Submodule: true, Old: old, New: cur})
+			case !inOld && inNew:
+				files = append(files, File{Path: p, Status: Added, Submodule: true, New: cur})
+			case inOld && !inNew:
+				files = append(files, File{Path: p, Status: Deleted, Submodule: true, Old: old})
+			}
+			continue
+		}
+		if f, changed := entryFile(p, old, oldMode, inOld, cur, newMode, inNew); changed {
 			files = append(files, f)
 		}
 	}
+	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return files, nil
-}
-
-// fileFor builds the File entry for a path, reporting whether the content
-// actually changed between the old and the new version.
-func fileFor(path, old string, inOld bool, new string, inNew bool) (File, bool) {
-	switch {
-	case inOld && inNew && old != new:
-		return File{Path: path, Status: Modified, Old: old, New: new}, true
-	case !inOld && inNew:
-		return File{Path: path, Status: Added, New: new}, true
-	case inOld && !inNew:
-		return File{Path: path, Status: Deleted, Old: old}, true
-	}
-	return File{}, false
 }
 
 func treeContent(tree *object.Tree, path string) (string, bool, error) {

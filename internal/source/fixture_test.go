@@ -11,6 +11,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
@@ -159,4 +160,85 @@ func (f *fixture) linkedWorktreeOn(wt billy.Filesystem, name string) *fixture {
 		f.t.Fatal(err)
 	}
 	return &fixture{t: f.t, repo: repo, wt: wt}
+}
+
+// blob stores a blob object with the content and returns its hash. It
+// lets tests build trees whose entries do not come from the worktree.
+func (f *fixture) blob(content string) plumbing.Hash {
+	f.t.Helper()
+	o := plumbing.NewMemoryObject(nil)
+	o.SetType(plumbing.BlobObject)
+	o.SetSize(int64(len(content)))
+	w, err := o.Writer()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(content)); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.repo.Storer.SetEncodedObject(o); err != nil {
+		f.t.Fatal(err)
+	}
+	return o.Hash()
+}
+
+// rawTree stores a tree object with the entries and returns its hash.
+func (f *fixture) rawTree(entries []object.TreeEntry) plumbing.Hash {
+	f.t.Helper()
+	t := &object.Tree{Entries: entries}
+	o := plumbing.NewMemoryObject(nil)
+	if err := t.Encode(o); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.repo.Storer.SetEncodedObject(o); err != nil {
+		f.t.Fatal(err)
+	}
+	return o.Hash()
+}
+
+// rawCommit stores a commit with the tree and parents, points ref at it
+// and returns its hash. It lets tests fabricate trees a worktree cannot
+// produce, like gitlink entries.
+func (f *fixture) rawCommit(ref, msg string, tree plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
+	f.t.Helper()
+	sig := &object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0)}
+	c := &object.Commit{
+		Author:       *sig,
+		Committer:    *sig,
+		Message:      msg,
+		TreeHash:     tree,
+		ParentHashes: parents,
+	}
+	o := plumbing.NewMemoryObject(nil)
+	if err := c.EncodeWithoutSignature(o); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.repo.Storer.SetEncodedObject(o); err != nil {
+		f.t.Fatal(err)
+	}
+	f.setRef(ref, o.Hash())
+	return o.Hash()
+}
+
+// stageGitlink adds a gitlink entry for path to the index, like staging
+// a submodule. It lets tests build a working tree state that matches a
+// fabricated commit with a gitlink.
+func (f *fixture) stageGitlink(path string, h plumbing.Hash) {
+	f.t.Helper()
+	idx, err := f.repo.Storer.Index()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	e, err := idx.Add(path)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	e.Hash = h
+	e.Mode = filemode.Submodule
+	if err := f.repo.Storer.SetIndex(idx); err != nil {
+		f.t.Fatal(err)
+	}
 }
