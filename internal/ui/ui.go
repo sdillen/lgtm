@@ -64,6 +64,13 @@ type Options struct {
 	// search and heuristic definitions. nil disables the all-files
 	// picker, gr and gd.
 	Search *search.Searcher
+	// Changes signals that the source changed while the review runs;
+	// nil means the review is not watched. A signal only shows a hint,
+	// the view changes on R.
+	Changes <-chan struct{}
+	// Reload resolves the review subject again: for the change hint
+	// and for R. nil disables reloading.
+	Reload func() ([]diff.ReviewFile, error)
 }
 
 // mode is what key presses go to.
@@ -202,6 +209,10 @@ type Model struct {
 	// dimmed segments of the deleted lines, keyed by line index.
 	highlights []theme.Line
 	dimmed     map[int]theme.Line
+
+	// changed is the number of files that changed in the source since
+	// the files were loaded; the status line hints at R.
+	changed int
 }
 
 // whichKeyMsg fires when a prefix has waited long enough for which-key.
@@ -236,24 +247,35 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		state: opts.State,
 		dir:   opts.Dir,
 	}
-	paths := make([]string, len(files))
-	m.pathIndex = make(map[string]int, len(files))
-	for i, f := range files {
-		paths[i] = f.Path
-		m.pathIndex[f.Path] = i
-	}
+	m.setFiles(files, nil)
 	if len(files) > 0 {
 		m.jumps = []jumpEntry{{file: 0}}
 	}
+	m.resetFile()
+	return m
+}
+
+// setFiles makes files the files of the review and builds what depends
+// on the file list: the path index, the collapse state per file, the
+// drawer tree and the picker. collapsed keeps the collapse state of
+// files by path; other files start in their default.
+func (m *Model) setFiles(files []diff.ReviewFile, collapsed map[string]bool) {
+	m.files = files
+	paths := make([]string, len(files))
+	m.pathIndex = make(map[string]int, len(files))
 	m.fileCollapsed = make([]bool, len(files))
 	for i, f := range files {
-		m.fileCollapsed[i] = f.Collapsed()
+		paths[i] = f.Path
+		m.pathIndex[f.Path] = i
+		c, ok := collapsed[f.Path]
+		if !ok {
+			c = f.Collapsed()
+		}
+		m.fileCollapsed[i] = c
 	}
 	m.tree = fileTree(paths)
 	m.drawerCursor = m.firstFileRow()
 	m.pickerMatches = m.allFileIndexes()
-	m.resetFile()
-	return m
 }
 
 // firstFileRow is the tree row of the first file, -1 if there is none.
@@ -275,7 +297,7 @@ func (m Model) allFileIndexes() []int {
 	return all
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return m.waitForChange() }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -290,6 +312,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case approveMsg:
 		return m, tea.Quit
+	case changedMsg:
+		return m, m.checkChanges()
+	case checkedMsg:
+		return m.takeCheck(msg)
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			m.quitOpen = len(m.state.OpenComments()) > 0
@@ -367,6 +393,8 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	switch a {
 	case actQuit:
 		return m, m.quitAction()
+	case actReload:
+		m.reload()
 	case actCopyPrompt:
 		m.copyPrompt()
 		return m, nil
@@ -1087,6 +1115,9 @@ func (m Model) statusLine() string {
 	if len(m.state.Comments()) > 0 {
 		parts = append(parts, m.commentCount())
 	}
+	if n := m.orphanCount(); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d verwaist", n))
+	}
 	if m.unified {
 		parts = append(parts, "[unified]")
 	}
@@ -1101,6 +1132,9 @@ func (m Model) statusLine() string {
 	}
 	if typed := m.keys.Typed(); typed != "" {
 		parts = append(parts, typed)
+	}
+	if hint := m.changeHint(); hint != "" {
+		parts = append(parts, hint)
 	}
 	return m.theme.Styles.Status.Render(strings.Join(parts, "  "))
 }

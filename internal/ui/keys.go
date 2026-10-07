@@ -52,6 +52,7 @@ const (
 	actThemeCmd       keymap.Action = "choose-theme"
 	actHelp           keymap.Action = "help"
 	actCmdline        keymap.Action = "command-line"
+	actReload         keymap.Action = "reload"
 	actQuit           keymap.Action = "quit"
 )
 
@@ -107,6 +108,7 @@ var bindings = []keymap.Binding{
 	{Action: actThemeCmd, Keys: []string{"<leader>t"}, Desc: "choose theme"},
 	{Action: actHelp, Keys: []string{"?"}, Desc: "help"},
 	{Action: actCmdline, Keys: []string{":"}, Desc: "command line"},
+	{Action: actReload, Keys: []string{"R"}, Desc: "reload the changed review"},
 	{Action: actQuit, Keys: []string{"q"}, Desc: "quit"},
 }
 

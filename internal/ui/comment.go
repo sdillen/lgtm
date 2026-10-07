@@ -394,21 +394,21 @@ func (m Model) noteRows(fi, line int) []row {
 func (m Model) lineNotes(line int, old bool, attach int) []row {
 	var rows []row
 	for _, c := range m.fileComments {
-		if c.Old == old && c.End == line {
+		if !c.Orphaned && c.Old == old && c.End == line {
 			rows = append(rows, m.noteRowLines(c, attach)...)
 		}
 	}
 	return rows
 }
 
-// fileNotes are the note rows of the file comments of the current file
-// and, in the first file, of the global comments. They attach to the
-// first line of the file.
+// fileNotes are the note rows of the file comments and the orphaned
+// comments of the current file and, in the first file, of the global
+// comments. They attach to the first line of the file.
 func (m Model) fileNotes() []row {
 	var rows []row
 	path := m.files[m.fileIdx].Path
 	for _, c := range m.fileComments {
-		if c.Path == path && c.Start == 0 && c.End == 0 {
+		if c.Path == path && (c.Orphaned || c.Start == 0 && c.End == 0) {
 			rows = append(rows, m.noteRowLines(c, 0)...)
 		}
 	}
@@ -426,6 +426,11 @@ func (m Model) noteRowLines(c review.Comment, line int) []row {
 	// The text wraps after the gutter and the "▎ " bar.
 	width := max(1, m.contentWidth()-gutterWidth-2)
 	text := string(c.Category) + ": " + c.Text
+	if c.Orphaned {
+		// The code is gone; the last known anchor tells where the
+		// comment was.
+		text = c.Location() + " – " + text
+	}
 	var rows []row
 	for _, l := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
 		rows = append(rows, row{line: line, fold: -1, note: &note{category: c.Category, text: l, comment: c}})
@@ -466,7 +471,8 @@ func (m Model) commentCount() string {
 }
 
 // loadFileComments caches the comments of the current file and the
-// global comments for the virtual rows.
+// global comments for the virtual rows. Orphaned comments of files that
+// left the review count as global ones, so they stay visible.
 func (m *Model) loadFileComments() {
 	m.fileComments = nil
 	m.globalComments = nil
@@ -478,7 +484,7 @@ func (m *Model) loadFileComments() {
 		if c.Path == path {
 			m.fileComments = append(m.fileComments, c)
 		}
-		if c.Path == "" {
+		if c.Path == "" || c.Orphaned && m.fileIdxOf(c.Path) < 0 {
 			m.globalComments = append(m.globalComments, c)
 		}
 	}
@@ -530,7 +536,9 @@ type commentPos struct {
 // commentPositions lists every comment with a place in the current
 // review, in file order: global comments at the top of the first file,
 // file comments at the top of their file, line comments below the line
-// they end on. Comments whose file or line is gone are left out.
+// they end on. Orphaned comments sit at the top of their file, or of the
+// first file when their file left the review. Comments whose file or
+// line is gone otherwise are left out.
 func (m Model) commentPositions() []commentPos {
 	var pos []commentPos
 	for _, c := range m.state.Comments() {
@@ -538,11 +546,14 @@ func (m Model) commentPositions() []commentPos {
 		if c.Path != "" {
 			fi = m.fileIdxOf(c.Path)
 		}
+		if fi < 0 && c.Orphaned && len(m.files) > 0 {
+			fi = 0
+		}
 		if fi < 0 {
 			continue // the file is no longer part of the review
 		}
 		line := 0
-		if c.Start != 0 || c.End != 0 {
+		if !c.Orphaned && (c.Start != 0 || c.End != 0) {
 			line = m.lineIndex(m.files[fi], c.End, c.Old)
 			if line < 0 {
 				continue // the anchored line is no longer in the file
