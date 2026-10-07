@@ -87,7 +87,7 @@ func (s *Source) Default() (Changes, error) {
 	}
 	baseTree, err := bases[0].Tree()
 	if err != nil {
-		return Changes{}, err
+		return Changes{}, fmt.Errorf("read merge base tree: %w", err)
 	}
 	files, err := s.workingTreeChanges(baseTree, head)
 	if err != nil {
@@ -101,7 +101,7 @@ func (s *Source) Default() (Changes, error) {
 func (s *Source) defaultBranch() (*plumbing.Reference, error) {
 	remotes, err := s.repo.Remotes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list remotes: %w", err)
 	}
 	candidates := []plumbing.ReferenceName{plumbing.NewRemoteHEADReferenceName("origin")}
 	for _, r := range remotes {
@@ -126,7 +126,11 @@ func (s *Source) headCommit() (*object.Commit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve HEAD: %w", err)
 	}
-	return s.repo.CommitObject(ref.Hash())
+	c, err := s.repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("read HEAD commit: %w", err)
+	}
+	return c, nil
 }
 
 // workingTreeChanges compares base with the working tree. Candidates are the
@@ -139,11 +143,11 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 	}
 	headTree, err := head.Tree()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read HEAD tree: %w", err)
 	}
 	committed, err := object.DiffTree(base, headTree)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("diff merge base with HEAD: %w", err)
 	}
 	status, err := wt.Status()
 	if err != nil {
@@ -173,7 +177,7 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 		}
 		cur, inNew, err := fsContent(wt.Filesystem(), p)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read %s from working tree: %w", p, err)
 		}
 		switch {
 		case inOld && inNew && old != cur:
@@ -214,7 +218,10 @@ func fsContent(fs billy.Filesystem, path string) (string, bool, error) {
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
 		target, err := fs.Readlink(path)
-		return target, err == nil, err
+		if err != nil {
+			return "", false, err
+		}
+		return target, true, nil
 	}
 	if !fi.Mode().IsRegular() {
 		return "", false, nil
