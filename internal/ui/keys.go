@@ -22,6 +22,9 @@ const (
 	actNextFile      keymap.Action = "next-file"
 	actPrevFile      keymap.Action = "prev-file"
 	actUnified       keymap.Action = "toggle-unified"
+	actDrawer        keymap.Action = "toggle-file-drawer"
+	actPicker        keymap.Action = "pick-file"
+	actToggleRead    keymap.Action = "toggle-read"
 	actThemeCmd      keymap.Action = "choose-theme"
 	actHelp          keymap.Action = "help"
 	actCmdline       keymap.Action = "command-line"
@@ -49,6 +52,9 @@ var bindings = []keymap.Binding{
 	// u toggles the unified view. It deliberately is not vim's undo:
 	// lgtm only reads, and the classic diff view is one key away.
 	{Action: actUnified, Keys: []string{"u", "<leader>u"}, Desc: "toggle unified view"},
+	{Action: actDrawer, Keys: []string{"<leader>d"}, Desc: "toggle file drawer"},
+	{Action: actPicker, Keys: []string{"<leader>p"}, Desc: "pick a changed file"},
+	{Action: actToggleRead, Keys: []string{"<leader>r"}, Desc: "toggle read status"},
 	{Action: actThemeCmd, Keys: []string{"<leader>t"}, Desc: "choose theme"},
 	{Action: actHelp, Keys: []string{"?"}, Desc: "help"},
 	{Action: actCmdline, Keys: []string{":"}, Desc: "command line"},

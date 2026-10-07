@@ -57,6 +57,7 @@ var commands = []struct{ usage, desc string }{
 	{":q", "quit"},
 	{":theme [name]", "switch the theme, or show the current one"},
 	{":set [no]unified", "set an option (name! toggles, name? shows)"},
+	{":set [no]sidebar", "keep the file tree visible"},
 }
 
 // helpLines are all lines of the full help: every action with all its
@@ -150,7 +151,8 @@ func (m Model) box(title string, lines []string) string {
 }
 
 // withOverlay draws the open overlay over the rendered view: the help
-// centred, which-key at the bottom right above the status line.
+// centred, which-key and the picker at the bottom right, the drawer at
+// the top left.
 func (m Model) withOverlay(view string) string {
 	if m.bodyHeight() < boxChromeRows+1 || m.width < boxChromeCols+1 {
 		return view
@@ -160,6 +162,14 @@ func (m Model) withOverlay(view string) string {
 	switch {
 	case m.mode == modeHelp:
 		box = m.helpBox()
+		w, h := lipgloss.Size(box)
+		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
+	case m.mode == modeDrawer:
+		box = m.drawerBox()
+		_, h := lipgloss.Size(box)
+		x, y = 0, max(0, (m.bodyHeight()-h)/2)
+	case m.mode == modePicker:
+		box = m.pickerBox()
 		w, h := lipgloss.Size(box)
 		x, y = max(0, (m.width-w)/2), max(0, (m.bodyHeight()-h)/2)
 	case m.whichKey:

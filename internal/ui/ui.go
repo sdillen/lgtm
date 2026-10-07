@@ -16,6 +16,7 @@ import (
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 )
 
@@ -37,6 +38,12 @@ type Options struct {
 	// WhichKeyDelay is the wait before which-key appears; 0 means the
 	// default of 300ms.
 	WhichKeyDelay time.Duration
+	// State is the review state the read status lives in; nil means a
+	// session-only state.
+	State *review.State
+	// Dir is the worktree root the state is saved to; empty disables
+	// saving.
+	Dir string
 }
 
 // mode is what key presses go to.
@@ -46,6 +53,8 @@ const (
 	modeNormal  mode = iota // the review view
 	modeHelp                // the ? help overlay
 	modeCmdline             // the : command line
+	modeDrawer              // the file drawer
+	modePicker              // the fuzzy file picker
 )
 
 // Model is the review view: one file at a time, with folds for the
@@ -75,6 +84,28 @@ type Model struct {
 	message    string            // command result in the bottom line, until the next key
 	messageErr bool              // message is an error
 
+	// state holds the read status per file; dir is where it is saved,
+	// "" disables saving.
+	state *review.State
+	dir   string
+
+	// tree is the file tree of the drawer and the sidebar, built once;
+	// drawerCursor is the selected row while the drawer is open.
+	tree         []treeRow
+	drawerCursor int
+	sidebar      bool // the permanent sidebar is shown
+
+	// pickerQuery is the fuzzy query, pickerMatches the matching file
+	// indexes and pickerSel the selected match.
+	pickerQuery   string
+	pickerMatches []int
+	pickerSel     int
+
+	// endVisible tells whether the end of the current file was visible
+	// after the last update; the read status is only set when it
+	// becomes visible, so the manual toggle is not undone by itself.
+	endVisible bool
+
 	// highlights are the syntax segments of the new-file content, one
 	// entry per line (indexed by new line number - 1). dimmed holds the
 	// dimmed segments of the deleted lines, keyed by line index.
@@ -99,9 +130,46 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 	if opts.WhichKeyDelay == 0 {
 		opts.WhichKeyDelay = defaultWhichKeyDelay
 	}
-	m := Model{files: files, label: label, theme: th, opts: opts, keys: opts.Keymap.Dispatcher()}
+	if opts.State == nil {
+		opts.State = review.NewState()
+	}
+	m := Model{
+		files: files,
+		label: label,
+		theme: th,
+		opts:  opts,
+		keys:  opts.Keymap.Dispatcher(),
+		state: opts.State,
+		dir:   opts.Dir,
+	}
+	paths := make([]string, len(files))
+	for i, f := range files {
+		paths[i] = f.Path
+	}
+	m.tree = fileTree(paths)
+	m.drawerCursor = m.firstFileRow()
+	m.pickerMatches = m.allFileIndexes()
 	m.resetFile()
 	return m
+}
+
+// firstFileRow is the tree row of the first file, -1 if there is none.
+func (m Model) firstFileRow() int {
+	for i, r := range m.tree {
+		if !r.dir {
+			return i
+		}
+	}
+	return -1
+}
+
+// allFileIndexes lists every file index, for the picker before any query.
+func (m Model) allFileIndexes() []int {
+	all := make([]int, len(m.files))
+	for i := range m.files {
+		all[i] = i
+	}
+	return all
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -112,6 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.clamp()
 		m.clampHelp()
+		m.maybeMarkRead()
 	case whichKeyMsg:
 		if msg.gen == m.keyGen && m.keys.InPrefix() {
 			m.whichKey = true
@@ -123,10 +192,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.keyGen++
 		m.whichKey = false
 		m.message, m.messageErr = "", false
-		if m.mode == modeCmdline {
+		switch m.mode {
+		case modeCmdline:
 			return m.cmdlineKey(msg)
+		case modeDrawer:
+			m = m.drawerKey(msg)
+			m.maybeMarkRead()
+			return m, nil
+		case modePicker:
+			m, cmd := m.pickerKey(msg)
+			m.maybeMarkRead()
+			return m, cmd
 		}
-		return m.dispatch(msg.String())
+		m, cmd := m.dispatch(msg.String())
+		m.maybeMarkRead()
+		return m, cmd
 	}
 	return m, nil
 }
@@ -171,6 +251,21 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		return m, nil
 	case actThemeCmd:
 		m.mode, m.cmdline = modeCmdline, "theme "
+		return m, nil
+	case actDrawer:
+		if len(m.files) > 0 {
+			m.openDrawer()
+		}
+		return m, nil
+	case actPicker:
+		if len(m.files) > 0 {
+			m.openPicker()
+		}
+		return m, nil
+	case actToggleRead:
+		if len(m.files) > 0 {
+			m.toggleRead()
+		}
 		return m, nil
 	}
 	if len(m.files) == 0 {
@@ -331,6 +426,7 @@ func (m Model) rowOfHeader(line int) int {
 // highlights it once.
 func (m *Model) resetFile() {
 	m.cursor, m.offset = 0, 0
+	m.endVisible = false
 	if len(m.files) == 0 {
 		m.foldsOpen = nil
 		m.highlights, m.dimmed = nil, nil
@@ -552,12 +648,15 @@ func (m Model) emptyView() string {
 	return strings.Join(lines, "\n")
 }
 
+// fileView renders the file rows and the bottom line, with the sidebar
+// beside them when it is on.
 func (m Model) fileView() string {
+	width := m.contentWidth()
 	var b strings.Builder
 	rows := m.rows()
 	for i := range m.bodyHeight() {
 		if j := m.offset + i; j < len(rows) {
-			b.WriteString(ansi.Truncate(m.renderRow(rows[j], j == m.cursor), m.width, ""))
+			b.WriteString(ansi.Truncate(m.renderRow(rows[j], j == m.cursor), width, ""))
 		}
 		b.WriteByte('\n')
 	}
@@ -565,8 +664,39 @@ func (m Model) fileView() string {
 	if bottom == "" {
 		bottom = m.statusLine()
 	}
-	b.WriteString(ansi.Truncate(bottom, m.width, ""))
-	return b.String()
+	b.WriteString(ansi.Truncate(bottom, width, ""))
+	if !m.sidebar {
+		return b.String()
+	}
+
+	// The sidebar box spans the file area; the bottom line spans the
+	// whole terminal below it.
+	side := strings.Split(m.sidebarBox(), "\n")
+	content := strings.Split(b.String(), "\n")
+	var out strings.Builder
+	for i := 0; i < m.bodyHeight(); i++ {
+		if i < len(side) {
+			out.WriteString(side[i])
+		}
+		out.WriteByte(' ')
+		if i < len(content) {
+			out.WriteString(content[i])
+		}
+		out.WriteByte('\n')
+	}
+	if len(content) > m.bodyHeight() {
+		out.WriteString(content[m.bodyHeight()])
+	}
+	return out.String()
+}
+
+// contentWidth is the width of the file view: the terminal width, minus
+// the sidebar when it is on.
+func (m Model) contentWidth() int {
+	if !m.sidebar {
+		return m.width
+	}
+	return max(1, m.width-m.sidebarWidth()-1)
 }
 
 // statusLine shows file path, position in the file list and the +/−

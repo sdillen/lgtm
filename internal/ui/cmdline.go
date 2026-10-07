@@ -77,7 +77,7 @@ func (m *Model) setTheme(args []string) {
 // reports it; without arguments all options are reported.
 func (m *Model) set(args []string) {
 	if len(args) == 0 {
-		m.message = m.optionState()
+		m.message = m.optionStates()
 		return
 	}
 	var report []string
@@ -93,30 +93,56 @@ func (m *Model) set(args []string) {
 		case strings.HasPrefix(arg, "no"):
 			name, op = strings.TrimPrefix(arg, "no"), "off"
 		}
-		if name != "unified" {
+		switch name {
+		case "unified":
+			switch op {
+			case "on":
+				m.setUnified(true)
+			case "off":
+				m.setUnified(false)
+			case "toggle":
+				m.setUnified(!m.unified)
+			case "query":
+				report = append(report, m.optionState("unified"))
+			}
+		case "sidebar":
+			switch op {
+			case "on":
+				m.sidebar = true
+			case "off":
+				m.sidebar = false
+			case "toggle":
+				m.sidebar = !m.sidebar
+			case "query":
+				report = append(report, m.optionState("sidebar"))
+			}
+		default:
 			m.fail("unknown option: " + arg)
 			return
-		}
-		switch op {
-		case "on":
-			m.setUnified(true)
-		case "off":
-			m.setUnified(false)
-		case "toggle":
-			m.setUnified(!m.unified)
-		case "query":
-			report = append(report, m.optionState())
 		}
 	}
 	m.message = strings.Join(report, "  ")
 }
 
-// optionState reports the options in vim style, e.g. "nounified".
-func (m Model) optionState() string {
-	if m.unified {
-		return "unified"
+// optionState reports one option in vim style, e.g. "nounified".
+func (m Model) optionState(name string) string {
+	on := false
+	switch name {
+	case "unified":
+		on = m.unified
+	case "sidebar":
+		on = m.sidebar
 	}
-	return "nounified"
+	if on {
+		return name
+	}
+	return "no" + name
+}
+
+// optionStates reports all options in vim style, e.g. "nounified
+// nosidebar".
+func (m Model) optionStates() string {
+	return m.optionState("unified") + " " + m.optionState("sidebar")
 }
 
 // fail shows an error message in the bottom line.
