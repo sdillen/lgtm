@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -83,12 +85,77 @@ func (s *Source) WorktreeDir() string {
 	return wt.Filesystem().Root()
 }
 
+// worktree opens the working tree with the patterns of the repository's
+// info/exclude as excludes. go-git reads info/exclude through the
+// working tree filesystem, which keeps .git out of reach, and does not
+// know the common git dir of a linked worktree; without the explicit
+// excludes git status and lgtm would disagree about untracked files,
+// e.g. lgtm's own .lgtm/ directory.
+func (s *Source) worktree() (*git.Worktree, error) {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+	_, commonDir, err := gitDirs(wt.Filesystem().Root())
+	if err != nil {
+		return wt, nil // not on disk, e.g. an in-memory repository
+	}
+	data, err := os.ReadFile(filepath.Join(commonDir, "info", "exclude"))
+	if err != nil {
+		return wt, nil // no info/exclude
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		wt.Excludes = append(wt.Excludes, gitignore.ParsePattern(line, nil))
+	}
+	return wt, nil
+}
+
+// gitDirs resolves the .git of the working tree root: the git dir that
+// holds HEAD and the common git dir that holds the refs. Both are the
+// .git directory, except in a linked worktree, whose .git file names its
+// own git dir, which in turn names the common dir.
+func gitDirs(root string) (gitDir, commonDir string, err error) {
+	dotGit := filepath.Join(root, ".git")
+	fi, err := os.Stat(dotGit)
+	if err != nil {
+		return "", "", err
+	}
+	if fi.IsDir() {
+		return dotGit, dotGit, nil
+	}
+	data, err := os.ReadFile(dotGit)
+	if err != nil {
+		return "", "", err
+	}
+	line := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(line, "gitdir:") {
+		return "", "", fmt.Errorf("%s is not a gitdir file", dotGit)
+	}
+	gitDir = strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
+	}
+	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err != nil {
+		return gitDir, gitDir, nil
+	}
+	commonDir = strings.TrimSpace(string(common))
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(gitDir, commonDir)
+	}
+	return gitDir, filepath.Clean(commonDir), nil
+}
+
 // Files lists every file of the working tree: the files tracked by
 // HEAD plus untracked files that are not ignored, sorted by path.
 // Files deleted in the working tree are skipped. It is the file
 // listing the context picker and the project search build on.
 func (s *Source) Files() ([]string, error) {
-	wt, err := s.repo.Worktree()
+	wt, err := s.worktree()
 	if err != nil {
 		return nil, fmt.Errorf("open working tree: %w", err)
 	}
@@ -142,7 +209,7 @@ func (s *Source) Files() ([]string, error) {
 // tree. It is how the UI opens files beyond the review in their new
 // state.
 func (s *Source) Read(path string) (string, error) {
-	wt, err := s.repo.Worktree()
+	wt, err := s.worktree()
 	if err != nil {
 		return "", fmt.Errorf("open working tree: %w", err)
 	}
@@ -452,7 +519,7 @@ func fsEntry(fs billy.Filesystem, path string, subHashes map[string]plumbing.Has
 
 // worktreeAttrs reads the .gitattributes of the working tree.
 func (s *Source) worktreeAttrs() (string, bool, error) {
-	wt, err := s.repo.Worktree()
+	wt, err := s.worktree()
 	if err != nil {
 		return "", false, fmt.Errorf("open working tree: %w", err)
 	}
@@ -513,7 +580,7 @@ func (s *Source) headCommit() (*object.Commit, error) {
 // part comes from the trees, the uncommitted part overlays the working
 // tree status on top; files whose content ends up unchanged are dropped.
 func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]File, error) {
-	wt, err := s.repo.Worktree()
+	wt, err := s.worktree()
 	if err != nil {
 		return nil, fmt.Errorf("open working tree: %w", err)
 	}

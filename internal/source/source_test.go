@@ -431,3 +431,51 @@ func TestHeadBranchEmptyWhenDetached(t *testing.T) {
 		t.Errorf("HeadBranch = %q, want empty for a detached HEAD", got)
 	}
 }
+
+// TestDefaultHonoursInfoExclude: like git status, untracked files
+// excluded by .git/info/exclude are not part of the review, e.g. lgtm's
+// own .lgtm/ directory. The same holds for a linked worktree, whose
+// info/exclude lives in the common git dir.
+func TestDefaultHonoursInfoExclude(t *testing.T) {
+	f := newDiskFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+	root := f.wt.Root()
+	if err := os.MkdirAll(filepath.Join(root, ".git", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "info", "exclude"), []byte("# local\n.lgtm/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.write(".lgtm/state.json", "{}")
+	f.write("b.txt", "b\n")
+	dir := t.TempDir()
+	linked := f.linkedWorktreeOn(osfs.New(dir), "agent")
+	linked.write(".lgtm/state.json", "{}")
+	linked.write("c.txt", "c\n")
+
+	for name, wt := range map[string]string{"main": root, "linked": dir} {
+		src, err := source.Open(wt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := src.Default()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range got.Files {
+			if strings.HasPrefix(file.Path, ".lgtm/") {
+				t.Errorf("%s: review lists the excluded %s", name, file.Path)
+			}
+		}
+		files, err := src.Files()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range files {
+			if strings.HasPrefix(p, ".lgtm/") {
+				t.Errorf("%s: Files lists the excluded %s", name, p)
+			}
+		}
+	}
+}
