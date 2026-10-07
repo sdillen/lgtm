@@ -21,6 +21,16 @@ var file = diff.ReviewFile{
 	},
 }
 
+// big is a file with two single-line changes (b -> B, j -> J) surrounded by
+// unchanged runs: a leading run of 1 line, a middle run of 7 lines (c..i)
+// and a trailing run of 10 lines (k..t).
+var big = diff.New("big.go",
+	"a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n",
+	"a\nB\nc\nd\ne\nf\ng\nh\ni\nJ\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n",
+)
+
+var small = diff.New("small.txt", "x\n", "X\n")
+
 func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 5)
 
@@ -29,38 +39,59 @@ func TestShowsFirstFileWithOldAndNewLineNumbers(t *testing.T) {
 		"   2      - old",
 		"        2 + new",
 		"   3    3   end",
-		"main.go",
+		"main.go  1/1  +1 −1",
 	})
 }
 
-func TestJAndKScrollWithinTheFile(t *testing.T) {
+func TestJAndKMoveTheCursorAndScroll(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{file}, "main"), 30, 3)
 
 	assertScreen(t, m, []string{
 		"   1    1   package main",
 		"   2      - old",
-		"main.go",
+		"main.go  1/1  +1 −1",
 	})
 
 	m = press(m, "j", "j", "j", "j")
 	assertScreen(t, m, []string{
 		"        2 + new",
 		"   3    3   end",
-		"main.go",
+		"main.go  1/1  +1 −1",
+	})
+
+	// Moving up only scrolls once the cursor leaves the top row.
+	m = press(m, "k")
+	assertScreen(t, m, []string{
+		"        2 + new",
+		"   3    3   end",
+		"main.go  1/1  +1 −1",
 	})
 
 	m = press(m, "k")
 	assertScreen(t, m, []string{
 		"   2      - old",
 		"        2 + new",
-		"main.go",
+		"main.go  1/1  +1 −1",
 	})
 
-	m = press(m, "k", "k", "k")
+	m = press(m, "k", "k")
 	assertScreen(t, m, []string{
 		"   1    1   package main",
 		"   2      - old",
-		"main.go",
+		"main.go  1/1  +1 −1",
+	})
+}
+
+func TestCountsRepeatAMotion(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	m = press(m, "5", "j")
+	assertScreen(t, m, []string{
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"big.go  1/1  +2 −2",
 	})
 }
 
@@ -85,7 +116,7 @@ func TestLongLinesAreCutAtTheTerminalWidth(t *testing.T) {
 
 	assertScreen(t, m, []string{
 		"        1 + 01234567",
-		"long.txt",
+		"long.txt  1/1  +1 −0",
 	})
 }
 
@@ -97,7 +128,7 @@ func TestTabsAreExpandedToSpaces(t *testing.T) {
 
 	assertScreen(t, m, []string{
 		"   1    1       x",
-		"t.go",
+		"t.go  1/1  +0 −0",
 	})
 }
 
@@ -124,6 +155,424 @@ func TestWithoutChangesShowsHintWithoutSubject(t *testing.T) {
 	})
 }
 
+func TestUnchangedRunsAreFoldedByDefaultWithLineCounts(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestZoOpensTheFoldUnderTheCursor(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 14)
+
+	// Cursor onto the middle fold marker.
+	m = press(m, "j", "j", "j")
+	m = press(m, "z", "o")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"   3    3   c",
+		"   4    4   d",
+		"   5    5   e",
+		"   6    6   f",
+		"   7    7   g",
+		"   8    8   h",
+		"   9    9   i",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestZcClosesTheFoldUnderTheCursor(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+
+	// Open the middle fold, then close it again.
+	m = press(m, "j", "j", "j", "z", "o", "z", "c")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestZROpensAllFoldsAndZMClosesAll(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 23)
+
+	m = press(m, "z", "R")
+	assertScreen(t, m, []string{
+		"   1    1   a",
+		"   2      - b",
+		"        2 + B",
+		"   3    3   c",
+		"   4    4   d",
+		"   5    5   e",
+		"   6    6   f",
+		"   7    7   g",
+		"   8    8   h",
+		"   9    9   i",
+		"  10      - j",
+		"       10 + J",
+		"  11   11   k",
+		"  12   12   l",
+		"  13   13   m",
+		"  14   14   n",
+		"  15   15   o",
+		"  16   16   p",
+		"  17   17   q",
+		"  18   18   r",
+		"  19   19   s",
+		"  20   20   t",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestZMClosesAllFolds(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+
+	m = press(m, "z", "M")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestUnifiedToggleShowsTheClassicDiff(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 17)
+
+	m = press(m, "u")
+	assertScreen(t, m, []string{
+		"@@ -1,5 +1,5 @@",
+		"   1    1   a",
+		"   2      - b",
+		"        2 + B",
+		"   3    3   c",
+		"   4    4   d",
+		"   5    5   e",
+		"@@ -7,7 +7,7 @@",
+		"   7    7   g",
+		"   8    8   h",
+		"   9    9   i",
+		"  10      - j",
+		"       10 + J",
+		"  11   11   k",
+		"  12   12   l",
+		"  13   13   m",
+		"big.go  1/1  +2 −2  [unified]",
+	})
+}
+
+func TestUnifiedToggleBackToTheFullFileView(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 8)
+
+	m = press(m, "u", "u")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestBracketCJumpsBetweenHunks(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	m = press(m, "]", "c")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = press(m, "]", "c")
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = press(m, "[", "c")
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"big.go  1/1  +2 −2",
+	})
+
+	// There is no hunk before the first one, so [c stays put.
+	m = press(m, "[", "c")
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestBracketFJumpsBetweenFiles(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big, small}, "main"), 40, 3)
+
+	m = press(m, "]", "f")
+	assertScreen(t, m, []string{
+		"   1      - x",
+		"        1 + X",
+		"small.txt  2/2  +1 −1",
+	})
+
+	m = press(m, "[", "f")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"big.go  1/2  +2 −2",
+	})
+}
+
+func TestCtrlDMovesDownHalfAPageAndCtrlUBack(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	// The window scrolls half a page down, the cursor stays on its
+	// screen row.
+	m = pressMsg(m, ctrl("d"))
+	assertScreen(t, m, []string{
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = pressMsg(m, ctrl("d"))
+	assertScreen(t, m, []string{
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = pressMsg(m, ctrl("u"))
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = pressMsg(m, ctrl("u"))
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestGgGoesToTheFirstLineAndGToTheLast(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	m = press(m, "G")
+	assertScreen(t, m, []string{
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"       10 + J",
+		"⋯ 10 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = press(m, "g", "g")
+	assertScreen(t, m, []string{
+		"⋯ 1 unveränderte Zeile ⋯",
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestZtPutsTheCursorAtTheTopAndZzCentersIt(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 7)
+
+	// Unfold everything and move the cursor onto the second hunk, then
+	// put it at the top of the screen.
+	m = press(m, "z", "R", "]", "c", "]", "c", "z", "t")
+	assertScreen(t, m, []string{
+		"  10      - j",
+		"       10 + J",
+		"  11   11   k",
+		"  12   12   l",
+		"  13   13   m",
+		"  14   14   n",
+		"big.go  1/1  +2 −2",
+	})
+
+	// Centering scrolls the context above the cursor into view.
+	m = press(m, "z", "z")
+	assertScreen(t, m, []string{
+		"   7    7   g",
+		"   8    8   h",
+		"   9    9   i",
+		"  10      - j",
+		"       10 + J",
+		"  11   11   k",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+// BenchmarkViewLargeFile measures rendering the visible part of a large
+// unfolded file, the core of the scroll path.
+func BenchmarkViewLargeFile(b *testing.B) {
+	large := diff.New("big.txt",
+		strings.Repeat("a line of context\n", 5000),
+		strings.Repeat("a line of context\n", 5000)+"new line\n")
+	m := start(ui.New([]diff.ReviewFile{large}, "main"), 120, 40)
+	m = press(m, "z", "R")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m.View()
+	}
+}
+
+func TestHunkJumpInUnifiedModeMovesBetweenSections(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+
+	m = press(m, "u", "]", "c")
+	assertScreen(t, m, []string{
+		"   4    4   d",
+		"   5    5   e",
+		"@@ -7,7 +7,7 @@",
+		"big.go  1/1  +2 −2  [unified]",
+	})
+
+	m = press(m, "[", "c")
+	assertScreen(t, m, []string{
+		"@@ -1,5 +1,5 @@",
+		"   1    1   a",
+		"   2      - b",
+		"big.go  1/1  +2 −2  [unified]",
+	})
+}
+
+func TestBracketCInsideASectionReturnsToItsHeader(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+
+	// Jump to the second section, move onto its lines, then [c must
+	// land on the current section's header, not the previous one.
+	m = press(m, "u", "]", "c", "j", "j", "[", "c")
+	assertScreen(t, m, []string{
+		"@@ -7,7 +7,7 @@",
+		"   7    7   g",
+		"   8    8   h",
+		"big.go  1/1  +2 −2  [unified]",
+	})
+}
+
+func TestCountRepeatsHunkJumps(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	// Two hunks exist, so a count of three lands on the last one.
+	m = press(m, "3", "]", "c")
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"⋯ 7 unveränderte Zeilen ⋯",
+		"  10      - j",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestCountRepeatsFileJumps(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big, small}, "main"), 40, 3)
+
+	m = press(m, "2", "]", "f")
+	assertScreen(t, m, []string{
+		"   1      - x",
+		"        1 + X",
+		"small.txt  2/2  +1 −1",
+	})
+}
+
+func TestCountedGJumpsToTheFileLine(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	m = press(m, "z", "R", "5", "G")
+	assertScreen(t, m, []string{
+		"   2      - b",
+		"        2 + B",
+		"   3    3   c",
+		"   4    4   d",
+		"big.go  1/1  +2 −2",
+	})
+}
+
+func TestCountedGInUnifiedModeSnapsToTheNextVisibleLine(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 4)
+
+	// Line 7 is the first visible line of the second section; line 6
+	// is not shown in the unified view.
+	m = press(m, "u", "7", "G")
+	assertScreen(t, m, []string{
+		"   4    4   d",
+		"   5    5   e",
+		"@@ -7,7 +7,7 @@",
+		"big.go  1/1  +2 −2  [unified]",
+	})
+}
+
+func TestCountedZzCentersAndCountedZtShowsTheLineAtTheTop(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{big}, "main"), 40, 5)
+
+	m = press(m, "z", "R", "5", "z", "z")
+	assertScreen(t, m, []string{
+		"        2 + B",
+		"   3    3   c",
+		"   4    4   d",
+		"   5    5   e",
+		"big.go  1/1  +2 −2",
+	})
+
+	m = press(m, "7", "z", "t")
+	assertScreen(t, m, []string{
+		"   6    6   f",
+		"   7    7   g",
+		"   8    8   h",
+		"   9    9   i",
+		"big.go  1/1  +2 −2",
+	})
+}
+
 func start(m tea.Model, width, height int) tea.Model {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return m
@@ -136,9 +585,20 @@ func press(m tea.Model, keys ...string) tea.Model {
 	return m
 }
 
+func pressMsg(m tea.Model, keys ...tea.KeyPressMsg) tea.Model {
+	for _, k := range keys {
+		m, _ = m.Update(k)
+	}
+	return m
+}
+
 func key(k string) tea.KeyPressMsg {
 	r := []rune(k)[0]
 	return tea.KeyPressMsg{Code: r, Text: k}
+}
+
+func ctrl(k string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: []rune(k)[0], Mod: tea.ModCtrl}
 }
 
 func assertScreen(t *testing.T, m tea.Model, want []string) {
@@ -146,6 +606,11 @@ func assertScreen(t *testing.T, m tea.Model, want []string) {
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	// The terminal is a rectangle; trailing blank rows carry no
+	// information.
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
 	got := strings.Join(lines, "\n")
 	if got != strings.Join(want, "\n") {
