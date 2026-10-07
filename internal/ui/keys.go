@@ -9,6 +9,8 @@ const (
 	actUp             keymap.Action = "up"
 	actLeft           keymap.Action = "left"
 	actRight          keymap.Action = "right"
+	actScrollLeft     keymap.Action = "scroll-left"
+	actScrollRight    keymap.Action = "scroll-right"
 	actHalfDown       keymap.Action = "half-page-down"
 	actHalfUp         keymap.Action = "half-page-up"
 	actTop            keymap.Action = "first-line"
@@ -59,6 +61,8 @@ var bindings = []keymap.Binding{
 	{Action: actUp, Keys: []string{"k", "<up>"}, Desc: "line up"},
 	{Action: actLeft, Keys: []string{"h"}, Desc: "left"},
 	{Action: actRight, Keys: []string{"l"}, Desc: "right"},
+	{Action: actScrollLeft, Keys: []string{"zh"}, Desc: "scroll left"},
+	{Action: actScrollRight, Keys: []string{"zl"}, Desc: "scroll right"},
 	{Action: actHalfDown, Keys: []string{"<C-d>"}, Desc: "half page down"},
 	{Action: actHalfUp, Keys: []string{"<C-u>"}, Desc: "half page up"},
 	{Action: actTop, Keys: []string{"gg"}, Desc: "first line (count: line N)"},

@@ -222,6 +222,14 @@ func (m Model) doContext(a keymap.Action, count int) Model {
 			m.jumpToViewLine(min(count-1, last))
 		}
 		m.offset = m.cursor
+	case actScrollLeft:
+		if !m.wrap {
+			m.hscroll = max(0, m.hscroll-m.contentWidth()/2)
+		}
+	case actScrollRight:
+		if !m.wrap {
+			m.hscroll += m.contentWidth() / 2
+		}
 	case actNextFile, actPrevFile:
 		dir := 1
 		if a == actPrevFile {
@@ -470,7 +478,11 @@ func (m *Model) moveCol(dir int) {
 }
 
 // scrollToCol scrolls horizontally so the cursor column stays visible.
+// With wrap on there is no horizontal scroll.
 func (m *Model) scrollToCol() {
+	if m.wrap {
+		return
+	}
 	line := m.viewLine(m.cursorViewLine())
 	cell := ansi.StringWidth(strings.ReplaceAll(line[:m.col], "\t", "    "))
 	if cell < m.hscroll {
@@ -488,7 +500,7 @@ func (m Model) canView() bool {
 }
 
 // viewLines are the lines of the current view: the review file's lines
-// as displayed, or the context file's lines.
+// as displayed, or the context file's lines. Info entries have none.
 func (m Model) viewLines() []string {
 	if m.context != nil {
 		return m.context.lines
@@ -505,12 +517,17 @@ func (m Model) viewLines() []string {
 }
 
 // viewLine is the text of the view line: the review file's line as
-// displayed, or the context file's line.
+// displayed, or the context file's line. Info entries have no lines
+// and yield empty text.
 func (m Model) viewLine(i int) string {
 	if m.context != nil {
 		return m.context.lines[i]
 	}
-	return m.files[m.fileIdx].Lines[i].Text
+	f := m.files[m.fileIdx]
+	if i < 0 || i >= len(f.Lines) {
+		return ""
+	}
+	return f.Lines[i].Text
 }
 
 // cursorViewLine is the 0-based line index of the cursor in the current
@@ -532,16 +549,23 @@ func (m Model) viewRows() int {
 }
 
 // contextView renders the lines of the context file and the bottom
-// line, horizontally scrolled like the review view.
+// line, horizontally scrolled like the review view; with wrap on the
+// lines are soft-wrapped instead.
 func (m Model) contextView() string {
 	width := m.contentWidth()
 	var b strings.Builder
-	for i := range m.bodyHeight() {
-		if j := m.offset + i; j < len(m.context.lines) {
-			row := ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, "")
-			b.WriteString(ansi.Truncate(row, width, ""))
+	if m.wrap {
+		m.renderWrapped(&b, width, len(m.context.lines), func(j int) string {
+			return m.renderContextLine(j, j == m.cursor)
+		})
+	} else {
+		for i := range m.bodyHeight() {
+			if j := m.offset + i; j < len(m.context.lines) {
+				row := ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, "")
+				b.WriteString(ansi.Truncate(row, width, ""))
+			}
+			b.WriteByte('\n')
 		}
-		b.WriteByte('\n')
 	}
 	bottom := m.bottomLine()
 	if bottom == "" {

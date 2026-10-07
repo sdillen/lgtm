@@ -148,6 +148,14 @@ type Model struct {
 	col     int
 	hscroll int
 
+	// wrap soft-wraps long lines instead of truncating them, ignoreWS
+	// hides whitespace-only changes; both are :set options. fileCollapsed
+	// remembers per file whether its whole content is collapsed (deleted
+	// and generated files start collapsed).
+	wrap          bool
+	ignoreWS      bool
+	fileCollapsed []bool
+
 	// searchQuery is the search pattern, searchMatches the matching
 	// lines of the current view and searchIdx the current match.
 	searchQuery   string
@@ -236,6 +244,10 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 	}
 	if len(files) > 0 {
 		m.jumps = []jumpEntry{{file: 0}}
+	}
+	m.fileCollapsed = make([]bool, len(files))
+	for i, f := range files {
+		m.fileCollapsed[i] = f.Collapsed()
 	}
 	m.tree = fileTree(paths)
 	m.drawerCursor = m.firstFileRow()
@@ -421,6 +433,16 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 	case actRight:
 		m.moveCol(1)
 		return m, nil
+	case actScrollLeft:
+		if !m.wrap {
+			m.hscroll = max(0, m.hscroll-m.contentWidth()/2)
+		}
+		return m, nil
+	case actScrollRight:
+		if !m.wrap {
+			m.hscroll += m.contentWidth() / 2
+		}
+		return m, nil
 	}
 	if len(m.files) == 0 && m.context == nil {
 		return m, nil
@@ -467,7 +489,10 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		}
 		m.offset = m.cursor
 	case actFoldOpen:
-		if fi := m.foldAtCursor(); fi >= 0 && !m.foldsOpen[fi] {
+		if m.fileCollapsed[m.fileIdx] {
+			m.fileCollapsed[m.fileIdx] = false
+			m.cursor = m.rowOfLine(0)
+		} else if fi := m.foldAtCursor(); fi >= 0 && !m.foldsOpen[fi] {
 			m.foldsOpen[fi] = true
 			m.cursor = m.rowOfLine(m.files[m.fileIdx].Folds[fi].Start)
 		}
@@ -475,9 +500,17 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		if fi := m.foldAtCursor(); fi >= 0 && m.foldsOpen[fi] {
 			m.foldsOpen[fi] = false
 			m.cursor = m.rowOfFold(fi)
+		} else if m.files[m.fileIdx].Collapsed() && !m.fileCollapsed[m.fileIdx] && m.cursorLine() == 0 {
+			// The whole file is one fold for deleted and generated
+			// files: zc at the first line collapses it again.
+			m.fileCollapsed[m.fileIdx] = true
+			m.cursor, m.offset = 0, 0
 		}
 	case actFoldsOpenAll, actFoldsCloseAll:
 		old := m.cursorLine()
+		if m.files[m.fileIdx].Collapsed() {
+			m.fileCollapsed[m.fileIdx] = a == actFoldsCloseAll
+		}
 		for i := range m.foldsOpen {
 			m.foldsOpen[i] = a == actFoldsOpenAll
 		}
@@ -704,17 +737,29 @@ func (m *Model) scrollCursorIntoView() {
 }
 
 // row is one row of the view: a line of the file, a fold marker, a
-// section header or a line of a comment.
+// section header, a whole-file collapse marker, a meta info entry or a
+// line of a comment.
 type row struct {
-	line   int    // index into the file's Lines; header rows carry the section start, comment rows their anchor line
-	fold   int    // fold index of a marker row, -1 otherwise
-	header string // rendered section header of a header row, "" otherwise
-	note   *note  // comment line of a comment row, nil otherwise
+	line      int    // index into the file's Lines; header rows carry the section start, comment rows their anchor line
+	fold      int    // fold index of a marker row, -1 otherwise
+	header    string // rendered section header of a header row, "" otherwise
+	note      *note  // comment line of a comment row, nil otherwise
+	collapsed bool   // whole-file collapse marker row of a deleted or generated file
+	meta      string // rendered info entry of a binary, mode or submodule change
 }
 
-// rows are the rows of the current view mode for the current file.
+// rows are the rows of the current view mode for the current file:
+// info entries for binary, mode and submodule changes, a single marker
+// for collapsed files, otherwise the full-file or unified view.
 func (m Model) rows() []row {
 	f := m.files[m.fileIdx]
+	switch f.Kind {
+	case diff.KindBinary, diff.KindMode, diff.KindSubmodule:
+		return []row{{line: -1, fold: -1, meta: m.metaText(f)}}
+	}
+	if m.fileCollapsed[m.fileIdx] {
+		return m.collapsedRows(f)
+	}
 	if m.unified {
 		return m.unifiedRows(f)
 	}
@@ -751,6 +796,52 @@ func (m Model) fullRows(f diff.ReviewFile) []row {
 	return rows
 }
 
+// collapsedRows is the whole-file collapse of a deleted or generated
+// file: one marker row, with the comments on the hidden lines below it.
+func (m Model) collapsedRows(f diff.ReviewFile) []row {
+	rows := []row{{line: -1, fold: -1, collapsed: true}}
+	for i := range f.Lines {
+		rows = append(rows, m.noteRows(m.fileIdx, i)...)
+	}
+	return rows
+}
+
+// metaText is the info entry of a binary, mode or submodule change:
+// the sizes, the modes or the commit hashes.
+func (m Model) metaText(f diff.ReviewFile) string {
+	switch f.Kind {
+	case diff.KindBinary:
+		switch {
+		case f.OldSize > 0 && f.NewSize > 0:
+			return fmt.Sprintf("binär: %d → %d Bytes", f.OldSize, f.NewSize)
+		case f.NewSize > 0:
+			return fmt.Sprintf("binär: %d Bytes", f.NewSize)
+		default:
+			return fmt.Sprintf("binär: %d Bytes (gelöscht)", f.OldSize)
+		}
+	case diff.KindMode:
+		return fmt.Sprintf("modus: %o → %o", f.OldMode, f.NewMode)
+	case diff.KindSubmodule:
+		switch {
+		case f.OldSub != "" && f.NewSub != "":
+			return fmt.Sprintf("submodul: %s → %s", shortHash(f.OldSub), shortHash(f.NewSub))
+		case f.NewSub != "":
+			return fmt.Sprintf("submodul: %s", shortHash(f.NewSub))
+		default:
+			return fmt.Sprintf("submodul: %s (gelöscht)", shortHash(f.OldSub))
+		}
+	}
+	return ""
+}
+
+// shortHash shortens a commit hash for the info entry.
+func shortHash(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
+}
+
 // unifiedRows are the hunks of the classic unified diff view: section
 // headers plus the hunks expanded by the context window. The file and
 // global comments sit at the top of the view.
@@ -767,12 +858,16 @@ func (m Model) unifiedRows(f diff.ReviewFile) []row {
 	return rows
 }
 
-// cursorLine returns the file line the cursor is on: the fold's first line
-// for marker rows, the section's first line for header rows.
+// cursorLine returns the file line the cursor is on: the fold's first
+// line for marker rows, the section's first line for header rows, and
+// the first line for info and collapse marker rows.
 func (m Model) cursorLine() int {
 	r := m.rows()[m.cursor]
 	if r.fold >= 0 {
 		return m.files[m.fileIdx].Folds[r.fold].Start
+	}
+	if r.line < 0 {
+		return 0
 	}
 	return r.line
 }
@@ -884,19 +979,28 @@ func (m Model) emptyView() string {
 }
 
 // fileView renders the file rows and the bottom line, with the sidebar
-// beside them when it is on.
+// beside them when it is on. With wrap on the rows are soft-wrapped
+// instead of truncated.
 func (m Model) fileView() string {
 	width := m.contentWidth()
 	var b strings.Builder
 	rows := m.rows()
-	for i := range m.bodyHeight() {
-		if j := m.offset + i; j < len(rows) {
+	if m.wrap {
+		m.renderWrapped(&b, width, len(rows), func(j int) string {
 			r := rows[j]
 			hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
-			row := ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, "")
-			b.WriteString(ansi.Truncate(row, width, ""))
+			return m.renderRow(r, hl)
+		})
+	} else {
+		for i := range m.bodyHeight() {
+			if j := m.offset + i; j < len(rows) {
+				r := rows[j]
+				hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
+				row := ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, "")
+				b.WriteString(ansi.Truncate(row, width, ""))
+			}
+			b.WriteByte('\n')
 		}
-		b.WriteByte('\n')
 	}
 	bottom := m.bottomLine()
 	if bottom == "" {
@@ -928,6 +1032,34 @@ func (m Model) fileView() string {
 	return out.String()
 }
 
+// wrapLimit is how many cells of one line are rendered with wrap on: a
+// screen height. Longer lines are cut with "…", so minified or
+// generated content cannot flood the view.
+func (m Model) wrapLimit() int {
+	return max(1, m.bodyHeight()*m.contentWidth()-1)
+}
+
+// renderWrapped renders the rows with soft wrap: every row fills width
+// cells and continues on the next line. A row longer than the wrap
+// limit is cut with "…".
+func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(int) string) {
+	out := 0
+	for j := m.offset; j < rows && out < m.bodyHeight(); j++ {
+		text := render(j)
+		if ansi.StringWidth(text) > m.wrapLimit() {
+			text = ansi.Truncate(text, m.wrapLimit(), "") + "…"
+		}
+		for _, piece := range strings.Split(ansi.Hardwrap(text, width, true), "\n") {
+			if out >= m.bodyHeight() {
+				break
+			}
+			b.WriteString(piece)
+			b.WriteByte('\n')
+			out++
+		}
+	}
+}
+
 // contentWidth is the width of the file view: the terminal width, minus
 // the sidebar when it is on.
 func (m Model) contentWidth() int {
@@ -938,13 +1070,17 @@ func (m Model) contentWidth() int {
 }
 
 // statusLine shows file path, position in the file list and the +/−
-// statistics, plus the unified marker when the classic view is active and
-// the keys of a pending sequence.
+// statistics, plus the markers of the active options and the keys of a
+// pending sequence. A rename names both paths as "old → new".
 func (m Model) statusLine() string {
 	f := m.files[m.fileIdx]
 	added, deleted := f.Stats()
+	path := f.Path
+	if f.OldPath != "" {
+		path = f.OldPath + " → " + f.Path
+	}
 	parts := []string{
-		f.Path,
+		path,
 		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
 		fmt.Sprintf("+%d −%d", added, deleted),
 	}
@@ -953,6 +1089,12 @@ func (m Model) statusLine() string {
 	}
 	if m.unified {
 		parts = append(parts, "[unified]")
+	}
+	if m.wrap {
+		parts = append(parts, "[wrap]")
+	}
+	if m.ignoreWS {
+		parts = append(parts, "[ignorews]")
 	}
 	if m.visual {
 		parts = append(parts, "-- VISUAL --")
@@ -967,6 +1109,20 @@ func (m Model) statusLine() string {
 func (m Model) renderRow(r row, cursor bool) string {
 	if r.note != nil {
 		return m.renderNote(r.note, cursor)
+	}
+	if r.meta != "" {
+		style := m.theme.Styles.Hunk
+		if cursor {
+			style = style.Background(m.theme.Styles.Cursor)
+		}
+		return style.Render(r.meta)
+	}
+	if r.collapsed {
+		style := m.theme.Styles.Fold
+		if cursor {
+			style = style.Background(m.theme.Styles.Cursor)
+		}
+		return style.Render(collapseText(m.files[m.fileIdx]))
 	}
 	if r.header != "" {
 		style := m.theme.Styles.Hunk
@@ -983,6 +1139,22 @@ func (m Model) renderRow(r row, cursor bool) string {
 		return style.Render(foldText(m.files[m.fileIdx].Folds[r.fold].Count()))
 	}
 	return m.renderLine(m.files[m.fileIdx].Lines[r.line], r.line, cursor)
+}
+
+// collapseText is the marker of a collapsed file: the deleted lines of
+// a deleted file, the diff of a generated file.
+func collapseText(f diff.ReviewFile) string {
+	n := len(f.Lines)
+	if f.Deleted() {
+		if n == 1 {
+			return "⋯ 1 gelöschte Zeile ⋯"
+		}
+		return fmt.Sprintf("⋯ %d gelöschte Zeilen ⋯", n)
+	}
+	if n == 1 {
+		return "⋯ generierte Datei: 1 Zeile ⋯"
+	}
+	return fmt.Sprintf("⋯ generierte Datei: %d Zeilen ⋯", n)
 }
 
 // foldText is the marker of a collapsed unchanged run.
@@ -1016,6 +1188,12 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 		marker, markerStyle, wash = " + ", st.Added, st.AddedBG
 	case diff.Deleted:
 		marker, markerStyle, wash = " - ", st.Deleted, st.DeletedBG
+	}
+	// New files carry no wash: the whole file is added, so a flat
+	// background would drown the syntax colours. The gutter markers
+	// mark the lines.
+	if wash != nil && m.files[m.fileIdx].Added() {
+		wash = nil
 	}
 	if wash != nil {
 		markerStyle = markerStyle.Background(wash)

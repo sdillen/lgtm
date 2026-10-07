@@ -140,12 +140,54 @@ func (m *Model) set(args []string) {
 			case "query":
 				report = append(report, m.optionState("sidebar"))
 			}
+		case "wrap":
+			switch op {
+			case "on":
+				m.wrap = true
+				m.hscroll = 0
+			case "off":
+				m.wrap = false
+			case "toggle":
+				m.wrap = !m.wrap
+				if m.wrap {
+					m.hscroll = 0
+				}
+			case "query":
+				report = append(report, m.optionState("wrap"))
+			}
+		case "ignorews":
+			switch op {
+			case "on":
+				m.setIgnoreWS(true)
+			case "off":
+				m.setIgnoreWS(false)
+			case "toggle":
+				m.setIgnoreWS(!m.ignoreWS)
+			case "query":
+				report = append(report, m.optionState("ignorews"))
+			}
 		default:
 			m.fail("unknown option: " + arg)
 			return
 		}
 	}
 	m.message = strings.Join(report, "  ")
+}
+
+// setIgnoreWS recomputes every file's view with whitespace-only changes
+// hidden or visible.
+func (m *Model) setIgnoreWS(on bool) {
+	if on == m.ignoreWS {
+		return
+	}
+	m.ignoreWS = on
+	for i := range m.files {
+		m.files[i] = m.files[i].WithIgnoreWS(on)
+	}
+	if m.context == nil && len(m.files) > 0 {
+		m.highlights, m.dimmed = highlightFile(m.theme.Highlighter, m.files[m.fileIdx])
+		m.resetFile()
+	}
 }
 
 // optionState reports one option in vim style, e.g. "nounified".
@@ -156,6 +198,10 @@ func (m Model) optionState(name string) string {
 		on = m.unified
 	case "sidebar":
 		on = m.sidebar
+	case "wrap":
+		on = m.wrap
+	case "ignorews":
+		on = m.ignoreWS
 	}
 	if on {
 		return name
@@ -164,9 +210,10 @@ func (m Model) optionState(name string) string {
 }
 
 // optionStates reports all options in vim style, e.g. "nounified
-// nosidebar".
+// nosidebar nowrap noignorews".
 func (m Model) optionStates() string {
-	return m.optionState("unified") + " " + m.optionState("sidebar")
+	return m.optionState("unified") + " " + m.optionState("sidebar") +
+		" " + m.optionState("wrap") + " " + m.optionState("ignorews")
 }
 
 // fail shows an error message in the bottom line.
