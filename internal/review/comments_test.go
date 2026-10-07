@@ -280,6 +280,9 @@ func TestLocationNamesEveryAnchorKind(t *testing.T) {
 		{review.Comment{Path: "main.go", Start: 7, End: 7, Old: true}, "main.go:7 (alt, entfernt)"},
 		{review.Comment{Path: "main.go"}, "main.go (Datei)"},
 		{review.Comment{}, "global"},
+		{review.Comment{Path: "main.go", Start: 3, End: 5, Orphaned: true}, "main.go:3-5 (verwaist)"},
+		{review.Comment{Path: "main.go", Start: 7, End: 7, Old: true, Orphaned: true}, "main.go:7 (alt, entfernt, verwaist)"},
+		{review.Comment{Path: "main.go", Orphaned: true}, "main.go (Datei, verwaist)"},
 	}
 	for _, tt := range tests {
 		if got := tt.c.Location(); got != tt.want {

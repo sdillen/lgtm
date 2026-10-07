@@ -3,8 +3,8 @@ package review
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"slices"
+	"strings"
 )
 
 // Category is the priority a reviewer gives a comment.
@@ -64,6 +64,10 @@ type Comment struct {
 	Category Category `json:"category"`
 	Status   Status   `json:"status"`
 	Text     string   `json:"text"`
+	// Orphaned reports that the quoted code was not found again when
+	// the review was reloaded: the anchor is the last known one. The
+	// comment keeps its status, so an open orphan is still exported.
+	Orphaned bool `json:"orphaned,omitempty"`
 }
 
 // AddComment stores c as a new open comment with a fresh id and returns
@@ -133,19 +137,31 @@ func (s *State) SetCommentStatus(id string, status Status) (Comment, bool) {
 // Location names the anchor of the comment for review.md, the prompt
 // and the float title: "path:start-end" on new lines, "path:line (alt,
 // entfernt)" on deleted lines, "path (Datei)" for a whole file and
-// "global" for the whole review.
+// "global" for the whole review. An orphaned comment is marked
+// "verwaist", e.g. "path:start-end (verwaist)": its code was not found
+// again and the lines are the last known ones.
 func (c Comment) Location() string {
 	if c.Path == "" {
 		return "global"
 	}
-	if c.Start == 0 && c.End == 0 {
-		return c.Path + " (Datei)"
+	var notes []string
+	loc := c.Path
+	switch {
+	case c.Start == 0 && c.End == 0:
+		notes = append(notes, "Datei")
+	case c.Old:
+		loc += ":" + lineRange(c.Start, c.End)
+		notes = append(notes, "alt, entfernt")
+	default:
+		loc += ":" + lineRange(c.Start, c.End)
 	}
-	loc := fmt.Sprintf("%s:%s", c.Path, lineRange(c.Start, c.End))
-	if c.Old {
-		loc += " (alt, entfernt)"
+	if c.Orphaned {
+		notes = append(notes, "verwaist")
 	}
-	return loc
+	if len(notes) == 0 {
+		return loc
+	}
+	return loc + " (" + strings.Join(notes, ", ") + ")"
 }
 
 // newID returns a random comment id.

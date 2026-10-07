@@ -19,7 +19,7 @@ import (
 
 // Version is the schema version of state.json. It is exported for tests;
 // a state file written by a newer lgtm is rejected.
-const Version = 3
+const Version = 4
 
 // FileState is the persisted state of one file.
 type FileState struct {
