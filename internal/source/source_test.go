@@ -1,8 +1,11 @@
 package source_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/go-git/go-billy/v6/osfs"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
 )
@@ -151,6 +154,31 @@ func TestDefaultWorksInLinkedWorktree(t *testing.T) {
 	if got.Base != "main" {
 		t.Errorf("Base = %q, want %q", got.Base, "main")
 	}
+}
+
+func TestOpenFindsLinkedWorktreeOnDisk(t *testing.T) {
+	f := newDiskFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+	dir := t.TempDir()
+	linked := f.linkedWorktreeOn(osfs.New(dir), "agent")
+	linked.write("sub/a.txt", "s\n")
+	linked.commit("agent work")
+	linked.write("a.txt", "a\nb\n")
+
+	src, err := source.Open(filepath.Join(dir, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := src.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFiles(t, got, []source.File{
+		{Path: "a.txt", Status: source.Modified, Old: "a\n", New: "a\nb\n"},
+		{Path: "sub/a.txt", Status: source.Added, New: "s\n"},
+	})
 }
 
 func TestOpenOutsideRepositoryFailsWithReadableError(t *testing.T) {

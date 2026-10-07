@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -34,6 +35,19 @@ func newFixture(t *testing.T, defaultBranch string) *fixture {
 		t.Fatal(err)
 	}
 	return &fixture{t: t, repo: repo, wt: wt}
+}
+
+// newDiskFixture is like newFixture, but the repository lives in a
+// temporary directory, so the production entry point Open can be tested.
+func newDiskFixture(t *testing.T, defaultBranch string) *fixture {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false,
+		git.WithDefaultBranch(plumbing.NewBranchReferenceName(defaultBranch)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &fixture{t: t, repo: repo, wt: osfs.New(dir)}
 }
 
 func (f *fixture) write(path, content string) {
@@ -119,11 +133,16 @@ func (f *fixture) worktree() *git.Worktree {
 // `git worktree add`, and returns a fixture operating on it.
 func (f *fixture) linkedWorktree(name string) *fixture {
 	f.t.Helper()
+	return f.linkedWorktreeOn(memfs.New(), name)
+}
+
+// linkedWorktreeOn is like linkedWorktree, but checks out into wt.
+func (f *fixture) linkedWorktreeOn(wt billy.Filesystem, name string) *fixture {
+	f.t.Helper()
 	m, err := xworktree.New(f.repo.Storer)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	wt := memfs.New()
 	if err := m.Add(wt, name); err != nil {
 		f.t.Fatal(err)
 	}
