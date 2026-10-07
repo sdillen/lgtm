@@ -598,3 +598,40 @@ func pressMain(m tea.Model, keys ...string) tea.Model {
 	}
 	return m
 }
+
+// TestRunWatchesTheWorkingTreeAndReloadsOnR pins the live wiring: while
+// the review runs, a change in the working tree shows only the hint,
+// and R shows the new content.
+func TestRunWatchesTheWorkingTreeAndReloadsOnR(t *testing.T) {
+	dir := repoWithRange(t)
+	old := runProgram
+	t.Cleanup(func() { runProgram = old })
+	runProgram = func(m tea.Model) (tea.Model, error) {
+		m, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 6})
+		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("three\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		msgs := make(chan tea.Msg, 1)
+		go func() { msgs <- m.Init()() }()
+		select {
+		case msg := <-msgs:
+			var cmd tea.Cmd
+			m, cmd = m.Update(msg)
+			m, _ = m.Update(cmd())
+		case <-time.After(5 * time.Second):
+			t.Fatal("the watcher reported no change")
+		}
+		screen := ansi.Strip(m.View().Content)
+		if !strings.Contains(screen, "↻ 1 Datei geändert") || strings.Contains(screen, "three") {
+			t.Errorf("after the change, want only the hint:\n%s", screen)
+		}
+		m = pressMain(m, "R")
+		if screen := ansi.Strip(m.View().Content); !strings.Contains(screen, "three") {
+			t.Errorf("R does not show the new content:\n%s", screen)
+		}
+		return m, nil
+	}
+	if _, err := run(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+}

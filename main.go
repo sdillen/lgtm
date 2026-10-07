@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -118,19 +119,28 @@ func run(dir string, args []string) (int, error) {
 	if err != nil {
 		return exitError, err
 	}
-	var changes source.Changes
-	switch subj.kind {
-	case subjectDefault:
-		changes, err = src.Default()
-	case subjectRange:
-		changes, err = src.Range(subj.a, subj.b)
-	case subjectCommit:
-		changes, err = src.Commit(subj.rev)
-	}
+	// The background change check and the UI's own git access (R, the
+	// repo search) may overlap; the lock keeps go-git single-threaded.
+	repo := &lockedSource{src: src}
+	changes, err := repo.resolve(subj)
 	if err != nil {
 		return exitError, err
 	}
 	files := reviewFiles(changes)
+	reload := func() ([]diff.ReviewFile, error) {
+		changes, err := repo.resolve(subj)
+		if err != nil {
+			return nil, err
+		}
+		return reviewFiles(changes), nil
+	}
+	// The watcher only feeds the change hint; without it (e.g. the
+	// inotify limit is reached) the review still runs and R works.
+	var changesCh <-chan struct{}
+	if w, err := src.Watch(); err == nil {
+		defer func() { _ = w.Close() }()
+		changesCh = w.Changes()
+	}
 
 	// The read status persists into .lgtm/state.json at the worktree
 	// root; .lgtm/ is excluded from git so it is never committed.
@@ -158,12 +168,49 @@ func run(dir string, args []string) (int, error) {
 		Base:   changes.Base,
 		// The repo search and the all-files picker ask the source
 		// for the working tree.
-		Search: search.New(src),
+		Search:  search.New(repo),
+		Changes: changesCh,
+		Reload:  reload,
 	}))
 	if err != nil {
 		return exitError, err
 	}
 	return final.(ui.Model).ExitCode(), nil
+}
+
+// lockedSource serialises the git access of the source: the UI reads
+// files and resolves the review on key presses, the change check
+// resolves it in the background.
+type lockedSource struct {
+	mu  sync.Mutex
+	src *source.Source
+}
+
+// resolve resolves the review subject.
+func (l *lockedSource) resolve(subj subject) (source.Changes, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch subj.kind {
+	case subjectRange:
+		return l.src.Range(subj.a, subj.b)
+	case subjectCommit:
+		return l.src.Commit(subj.rev)
+	}
+	return l.src.Default()
+}
+
+// Files lists the files of the working tree, for the repo search.
+func (l *lockedSource) Files() ([]string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.src.Files()
+}
+
+// Read reads a file of the working tree, for the repo search.
+func (l *lockedSource) Read(path string) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.src.Read(path)
 }
 
 // reviewFiles turns the changes of the review subject into the
