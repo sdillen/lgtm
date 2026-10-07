@@ -72,6 +72,79 @@ func (s *Source) WorktreeDir() string {
 	return wt.Filesystem().Root()
 }
 
+// Files lists every file of the working tree: the files tracked by
+// HEAD plus untracked files that are not ignored, sorted by path.
+// Files deleted in the working tree are skipped. It is the file
+// listing the context picker and the project search build on.
+func (s *Source) Files() ([]string, error) {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return nil, fmt.Errorf("open working tree: %w", err)
+	}
+	paths := map[string]bool{}
+	// A repository without commits has no HEAD tree yet; the untracked
+	// files from the status below are then the whole listing.
+	if head, err := s.headCommit(); err == nil {
+		tree, err := head.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("read HEAD tree: %w", err)
+		}
+		files := tree.Files()
+		for {
+			f, err := files.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("list HEAD tree: %w", err)
+			}
+			paths[f.Name] = true
+		}
+	}
+	// Untracked files from the status: like git status, files that are
+	// ignored are not listed. Staged additions are included even
+	// though HEAD does not know them yet.
+	status, err := wt.Status()
+	if err != nil {
+		return nil, fmt.Errorf("working tree status: %w", err)
+	}
+	for p, st := range status {
+		if st.Worktree == git.Untracked || st.Staging == git.Added {
+			paths[p] = true
+		}
+	}
+	var files []string
+	for p := range paths {
+		fi, err := wt.Filesystem().Lstat(p)
+		if err != nil {
+			continue // deleted in the working tree
+		}
+		if fi.Mode()&os.ModeSymlink != 0 || fi.Mode().IsRegular() {
+			files = append(files, p)
+		}
+	}
+	slices.Sort(files)
+	return files, nil
+}
+
+// Read returns the current content of path, as it is in the working
+// tree. It is how the UI opens files beyond the review in their new
+// state.
+func (s *Source) Read(path string) (string, error) {
+	wt, err := s.repo.Worktree()
+	if err != nil {
+		return "", fmt.Errorf("open working tree: %w", err)
+	}
+	content, ok, err := fsContent(wt.Filesystem(), path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("%s is not in the working tree", path)
+	}
+	return content, nil
+}
+
 // HeadBranch returns the short name of the branch HEAD points at, ""
 // when HEAD is detached. It names the branch in the prompt template.
 func (s *Source) HeadBranch() string {
