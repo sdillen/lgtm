@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
+	git "github.com/go-git/go-git/v6"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
 )
@@ -398,5 +399,35 @@ func TestWorktreeDirWorksFromASubdirectory(t *testing.T) {
 	}
 	if got, want := src.WorktreeDir(), f.wt.Root(); got != want {
 		t.Errorf("WorktreeDir = %q, want %q", got, want)
+	}
+}
+
+// TestHeadBranchNamesTheCurrentBranch pins the template data of the
+// prompt: the branch HEAD points at.
+func TestHeadBranchNamesTheCurrentBranch(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+	f.branch("feature")
+
+	src := source.New(f.repo)
+	if got := src.HeadBranch(); got != "feature" {
+		t.Errorf("HeadBranch = %q, want %q", got, "feature")
+	}
+}
+
+// TestHeadBranchEmptyWhenDetached pins that a detached HEAD has no
+// branch name.
+func TestHeadBranchEmptyWhenDetached(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	h := f.commit("base")
+	if err := f.worktree().Checkout(&git.CheckoutOptions{Hash: h}); err != nil {
+		t.Fatal(err)
+	}
+
+	src := source.New(f.repo)
+	if got := src.HeadBranch(); got != "" {
+		t.Errorf("HeadBranch = %q, want empty for a detached HEAD", got)
 	}
 }

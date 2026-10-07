@@ -72,6 +72,19 @@ func (s *Source) WorktreeDir() string {
 	return wt.Filesystem().Root()
 }
 
+// HeadBranch returns the short name of the branch HEAD points at, ""
+// when HEAD is detached. It names the branch in the prompt template.
+func (s *Source) HeadBranch() string {
+	ref, err := s.repo.Head()
+	if err != nil {
+		return ""
+	}
+	if ref.Name().IsBranch() {
+		return ref.Name().Short()
+	}
+	return ""
+}
+
 // Default resolves the default review subject: everything from the merge
 // base of HEAD and the default branch up to the working tree, i.e. commits
 // and uncommitted changes together.
