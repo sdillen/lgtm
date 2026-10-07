@@ -22,6 +22,21 @@ import (
 // review outcome.
 const exitError = 2
 
+// version and commit are set at build time with -ldflags, e.g.
+//
+//	go build -ldflags "-X main.version=v0.1.0 -X main.commit=$(git rev-parse --short HEAD)"
+//
+// Without ldflags the binary reports itself as an unversioned dev build.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
+// versionString describes the build for --version.
+func versionString() string {
+	return fmt.Sprintf("lgtm version %s (commit %s)", version, commit)
+}
+
 // runProgram runs the TUI. It is a variable so tests can capture the model
 // instead of opening a terminal.
 var runProgram = func(m tea.Model) (tea.Model, error) {
@@ -46,7 +61,8 @@ type subject struct {
 
 // options are the command line flags.
 type options struct {
-	theme string // --theme: theme name, overrides the config
+	theme   string // --theme: theme name, overrides the config
+	version bool   // --version: print version and exit
 }
 
 func main() {
@@ -60,6 +76,10 @@ func run(dir string, args []string) error {
 	subj, opt, err := parse(args)
 	if err != nil {
 		return err
+	}
+	if opt.version {
+		fmt.Println(versionString())
+		return nil
 	}
 	cfgDir, err := config.Dir()
 	if err != nil {
@@ -162,6 +182,8 @@ func parse(args []string) (subject, options, error) {
 		case arg == "--":
 			positional = append(positional, rest...)
 			rest = nil
+		case arg == "--version":
+			opt.version = true
 		case strings.HasPrefix(arg, "--theme="):
 			opt.theme = strings.TrimPrefix(arg, "--theme=")
 		case arg == "--theme":
@@ -195,7 +217,7 @@ func parseSubject(args []string) (subject, error) {
 		}
 		return subject{kind: subjectCommit, rev: arg}, nil
 	default:
-		return subject{}, errors.New("usage: lgtm [--theme <name>] [<commit> | <a>..<b>]")
+		return subject{}, errors.New("usage: lgtm [--theme <name>] [--version] [<commit> | <a>..<b>]")
 	}
 }
 

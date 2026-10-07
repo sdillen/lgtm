@@ -41,6 +41,43 @@ func TestParseSingleCommit(t *testing.T) {
 	}
 }
 
+func TestParseVersionFlag(t *testing.T) {
+	_, opt, err := parse([]string{"--version"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opt.version {
+		t.Error("version = false, want true")
+	}
+}
+
+func TestVersionFlagPrintsVersionAndCommitAndExitsZero(t *testing.T) {
+	stdout, stderr, code := runHelper(t, t.TempDir(), "--version")
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "lgtm version dev (commit unknown)") {
+		t.Errorf("stdout = %q, want version and commit", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestVersionStringUsesLdflagsValues(t *testing.T) {
+	oldVersion, oldCommit := version, commit
+	version, commit = "v0.1.0", "abc1234"
+	t.Cleanup(func() {
+		version, commit = oldVersion, oldCommit
+	})
+
+	if got := versionString(); got != "lgtm version v0.1.0 (commit abc1234)" {
+		t.Errorf("versionString() = %q, want the ldflags values", got)
+	}
+}
+
 func TestParseRange(t *testing.T) {
 	subj, _, err := parse([]string{"main..feature"})
 
@@ -124,7 +161,7 @@ func TestRunWithoutChangesShowsHintNamingTheSubject(t *testing.T) {
 }
 
 func TestOutsideRepositoryFailsWithClearErrorAndExitCode(t *testing.T) {
-	stderr, code := runHelper(t, t.TempDir())
+	_, stderr, code := runHelper(t, t.TempDir())
 
 	if code != exitError {
 		t.Errorf("exit code = %d, want %d", code, exitError)
@@ -135,7 +172,7 @@ func TestOutsideRepositoryFailsWithClearErrorAndExitCode(t *testing.T) {
 }
 
 func TestInvalidRangeFailsWithClearErrorAndExitCode(t *testing.T) {
-	stderr, code := runHelper(t, t.TempDir(), "a..b..c")
+	_, stderr, code := runHelper(t, t.TempDir(), "a..b..c")
 
 	if code != exitError {
 		t.Errorf("exit code = %d, want %d", code, exitError)
@@ -147,7 +184,7 @@ func TestInvalidRangeFailsWithClearErrorAndExitCode(t *testing.T) {
 
 func TestUnresolvableRefFailsWithClearErrorAndExitCode(t *testing.T) {
 	dir := repoWithRange(t)
-	stderr, code := runHelper(t, dir, "does-not-exist")
+	_, stderr, code := runHelper(t, dir, "does-not-exist")
 
 	if code != exitError {
 		t.Errorf("exit code = %d, want %d", code, exitError)
@@ -173,24 +210,25 @@ func captureProgram(t *testing.T) func() tea.Model {
 }
 
 // runHelper executes the test binary as the real lgtm program: it runs
-// run() and exits with the production exit code, so both stderr and the
-// exit code are observable.
-func runHelper(t *testing.T, dir string, args ...string) (stderr string, code int) {
+// run() and exits with the production exit code, so stdout, stderr and
+// the exit code are observable.
+func runHelper(t *testing.T, dir string, args ...string) (stdout string, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"LGTM_HELPER_PROCESS=1",
 		"LGTM_HELPER_ARGS="+strings.Join(args, " "))
-	var errBuf bytes.Buffer
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return errBuf.String(), ee.ExitCode()
+			return outBuf.String(), errBuf.String(), ee.ExitCode()
 		}
 		t.Fatal(err)
 	}
-	return errBuf.String(), 0
+	return outBuf.String(), errBuf.String(), 0
 }
 
 // TestHelperProcess is not a test: it is the lgtm program inside the test
