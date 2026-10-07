@@ -309,3 +309,52 @@ func TestLocateFindsTheLineInUnrelatedContent(t *testing.T) {
 		t.Errorf("Locate = %d, %v, want 3, true", line, ok)
 	}
 }
+
+// TestRelocateDoesNotJumpToOtherCodeWithTheSameText: when the commented
+// line is deleted, an unrelated line with the same text that was there
+// before does not take the comment; it is orphaned instead.
+func TestRelocateDoesNotJumpToOtherCodeWithTheSameText(t *testing.T) {
+	before := "func a() {\n\tx()\n}\n\nfunc b() {\n\ty()\n}\n"
+	after := "func a() {\n\tx()\n}\n"
+	prev := []review.File{{Path: "a.go", New: before}}
+	next := []review.File{{Path: "a.go", New: after}}
+	got := relocated(t, review.Comment{Path: "a.go", Start: 7, End: 7, Quote: "}"}, prev, next)
+	if !got.Orphaned {
+		t.Errorf("comment = %+v, want orphaned, not moved to the brace of a", got)
+	}
+}
+
+// TestRelocateDoesNotMoveIntoAnUnrelatedNewFile: a comment of a file
+// that left the review is only searched in a new file that looks like
+// its renamed version, not in any new file with the same short line.
+func TestRelocateDoesNotMoveIntoAnUnrelatedNewFile(t *testing.T) {
+	prev := []review.File{{Path: "draft.go", New: "package x\n\nfunc F() {\n\tf()\n}\n"}}
+	next := []review.File{{Path: "other.go", New: "package y\n\ntype T struct {\n\tn int\n}\n"}}
+	got := relocated(t, review.Comment{Path: "draft.go", Start: 5, End: 5, Quote: "}"}, prev, next)
+	if !got.Orphaned || got.Path != "draft.go" {
+		t.Errorf("comment = %+v, want orphaned on draft.go", got)
+	}
+}
+
+// TestReviewMarkdownRendersOrphanedComments pins the review.md contract
+// for orphaned comments: they stay in the export with their last known
+// anchor and quote, marked (verwaist), next to the anchored ones.
+func TestReviewMarkdownRendersOrphanedComments(t *testing.T) {
+	dir := t.TempDir()
+	s := review.NewState()
+	s.AddComment(review.Comment{Path: "main.go", Start: 3, End: 3, Category: review.Must, Quote: "x := 1", Text: "Why 1?"})
+	s.AddComment(review.Comment{Path: "main.go", Start: 5, End: 5, Category: review.Should, Quote: "keep()", Text: "Fine."})
+	s.AddComment(review.Comment{Path: "gone.go", Category: review.Nit, Text: "Split this file."})
+	s.Relocate(
+		[]review.File{
+			{Path: "main.go", New: "package main\n\nx := 1\n\nkeep()\n"},
+			{Path: "gone.go", New: "package main\n"},
+		},
+		[]review.File{{Path: "main.go", New: "package main\n\nx := 2\n\n// moved\nkeep()\n"}},
+	)
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	assertGolden(t, "review-orphaned.md", readReviewMD(t, dir))
+}

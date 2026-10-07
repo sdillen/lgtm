@@ -53,24 +53,21 @@ func relocate(c *Comment, prev map[string]File, next []File) bool {
 		}
 		return ok
 	}
+	p := prev[c.Path]
 	candidates := []File{f}
 	if !ok {
 		// The file may have been renamed without a rename source,
 		// e.g. a file new in the review: search the quote in the
-		// files that newly appeared.
+		// files that newly appeared and look like it.
 		candidates = nil
 		for _, n := range next {
-			if _, known := prev[n.Path]; !known {
+			if _, known := prev[n.Path]; !known && similar(side(p, c.Old), side(n, c.Old)) {
 				candidates = append(candidates, n)
 			}
 		}
 	}
-	p := prev[c.Path]
 	for _, f := range candidates {
-		before, after := p.New, f.New
-		if c.Old {
-			before, after = p.Old, f.Old
-		}
+		before, after := side(p, c.Old), side(f, c.Old)
 		start, ok := Locate(before, after, c.Quote, c.Start)
 		if !ok {
 			continue
@@ -82,6 +79,14 @@ func relocate(c *Comment, prev map[string]File, next []File) bool {
 		return true
 	}
 	return false
+}
+
+// side returns the old or the new content of f.
+func side(f File, old bool) string {
+	if old {
+		return f.Old
+	}
+	return f.New
 }
 
 // target returns the file of next that path became: the file with that
@@ -103,19 +108,34 @@ func target(path string, next []File) (File, bool) {
 // Locate finds quote in after, the content that replaced before, and
 // returns the 1-based line it starts on now. line is where the quote
 // started in before; among several places with the quote, the one
-// nearest to where that line moved wins. When the quote is not found
-// verbatim, lines that differ from it only in their indentation count
-// as a match. ok is false when after no longer contains the quote; the
-// line is then the best guess, where the old line moved to by the line
-// diff, so a cursor can stay put.
+// nearest to where that line moved wins. A place made of lines that
+// were other code in before (e.g. another closing brace) does not
+// count: the quoted code itself must have stayed or moved there. When
+// the quote is not found verbatim, lines that differ from it only in
+// their indentation count as a match. ok is false when after no longer
+// contains the quote; the line is then the best guess, where the old
+// line moved to by the line diff, so a cursor can stay put.
 func Locate(before, after, quote string, line int) (int, bool) {
-	lines := splitContent(after)
+	old, lines := splitContent(before), splitContent(after)
 	want := strings.Split(quote, "\n")
-	expected := moveLine(splitContent(before), lines, line)
+	edits := zdiff.Edits(old, lines)
+	expected := moveLine(edits, len(old), line)
+	origin := origins(edits)
+	// own reports whether the lines from i on are not other code that
+	// was already in before.
+	own := func(i int) bool {
+		for k := range want {
+			x, ok := origin[i+k]
+			if ok && (x < line-1 || x >= line-1+len(want)) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, eq := range []func(a, b string) bool{exact, sameButIndent} {
 		best := -1
 		for i := 0; i+len(want) <= len(lines); i++ {
-			if equalLines(lines[i:i+len(want)], want, eq) &&
+			if equalLines(lines[i:i+len(want)], want, eq) && own(i) &&
 				(best < 0 || abs(i+1-expected) < abs(best+1-expected)) {
 				best = i
 			}
@@ -127,6 +147,7 @@ func Locate(before, after, quote string, line int) (int, bool) {
 	return max(1, min(expected, len(lines))), false
 }
 
+// exact reports whether two lines are equal.
 func exact(a, b string) bool { return a == b }
 
 // sameButIndent reports whether two lines differ at most in their
@@ -135,16 +156,16 @@ func sameButIndent(a, b string) bool {
 	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
-// moveLine maps the 1-based line of before to the line of after it moved
-// to, following the line diff: an unchanged line maps to its new place,
-// a removed one to the place where the removal happened. A line beyond
-// before keeps its number.
-func moveLine(before, after []string, line int) int {
-	if line < 1 || line > len(before) {
+// moveLine maps the 1-based line of before, which has n lines, to the
+// line of after it moved to, following the line diff: an unchanged line
+// maps to its new place, a removed one to the place where the removal
+// happened. A line beyond before keeps its number.
+func moveLine(edits []zdiff.Edit[string], n, line int) int {
+	if line < 1 || line > n {
 		return line
 	}
 	y := 0 // the after line the walk has reached, 0-based
-	for _, e := range zdiff.Edits(before, after) {
+	for _, e := range edits {
 		switch e.Op {
 		case zdiff.Match:
 			if e.PosX+1 == line {
@@ -160,6 +181,27 @@ func moveLine(before, after []string, line int) int {
 		}
 	}
 	return line
+}
+
+// origins maps every unchanged line of after to the line of before it
+// was, both 0-based.
+func origins(edits []zdiff.Edit[string]) map[int]int {
+	m := map[int]int{}
+	for _, e := range edits {
+		if e.Op == zdiff.Match {
+			m[e.PosY] = e.PosX
+		}
+	}
+	return m
+}
+
+// similar reports whether at least half of the lines of the longer of
+// before and after are shared, the threshold of the rename detection:
+// after looks like a renamed version of before.
+func similar(before, after string) bool {
+	old, lines := splitContent(before), splitContent(after)
+	longest := max(len(old), len(lines))
+	return longest > 0 && 2*len(origins(zdiff.Edits(old, lines))) >= longest
 }
 
 // byPath indexes files by path.
@@ -191,6 +233,7 @@ func equalLines(a, b []string, eq func(a, b string) bool) bool {
 	return true
 }
 
+// abs returns the absolute value of n.
 func abs(n int) int {
 	if n < 0 {
 		return -n
