@@ -37,9 +37,9 @@ func assertGolden(t *testing.T, name, got string) {
 }
 
 // sampleData is a realistic prompt data set: two files, mixed
-// categories, a multi-line quote, a quote containing a backtick run and
-// a scrambled comment order, so the golden file pins the grouping and
-// sorting of the template helpers.
+// categories, a multi-line quote, a quote containing a backtick run, a
+// scrambled comment order and one comment of every anchor kind, so the
+// golden file pins the grouping and sorting of the template helpers.
 func sampleData() export.Data {
 	return export.Data{
 		Branch: "feat/export",
@@ -50,6 +50,9 @@ func sampleData() export.Data {
 			{Path: "cmd/main.go", Start: 1, End: 1, Category: review.Must, Quote: "package main", Text: "Hier fehlt ein Fehlerfall."},
 			{Path: "internal/a.go", Start: 9, End: 9, Category: review.Should, Quote: "y", Text: "Bitte benennen."},
 			{Path: "internal/a.go", Start: 7, End: 7, Category: review.Must, Quote: "a`b", Text: "Backtick im Zitat."},
+			{Path: "cmd/main.go", Start: 4, End: 4, Old: true, Category: review.Must, Quote: "run()", Text: "Darf nicht weg."},
+			{Path: "internal/a.go", Category: review.Nit, Text: "Datei umstrukturieren."},
+			{Category: review.Question, Text: "Passt die Richtung?"},
 		},
 	}
 }
@@ -90,26 +93,31 @@ func TestRenderReportsTemplateErrors(t *testing.T) {
 }
 
 // TestGroupByFileGroupsByPathWithMustFirst pins the ordering the prompt
-// contract promises: files in path order, within each file the comments
-// by category priority (must first), then by position.
+// contract promises: the global comments form the first group, then the
+// files in path order, within each file the comments by category
+// priority (must first), then by position.
 func TestGroupByFileGroupsByPathWithMustFirst(t *testing.T) {
 	groups := export.GroupByFile(sampleData().Comments)
 
-	if len(groups) != 2 {
-		t.Fatalf("got %d groups, want 2:\n%+v", len(groups), groups)
+	if len(groups) != 3 {
+		t.Fatalf("got %d groups, want 3:\n%+v", len(groups), groups)
 	}
-	if groups[0].Path != "cmd/main.go" || groups[1].Path != "internal/a.go" {
-		t.Errorf("groups ordered %q, %q, want path order", groups[0].Path, groups[1].Path)
+	if groups[0].Path != "" || groups[1].Path != "cmd/main.go" || groups[2].Path != "internal/a.go" {
+		t.Errorf("groups ordered %q, %q, %q, want global, cmd/main.go, internal/a.go",
+			groups[0].Path, groups[1].Path, groups[2].Path)
 	}
-	a := groups[1].Comments
-	want := []review.Category{review.Must, review.Should, review.Question}
+	if n := len(groups[0].Comments); n != 1 {
+		t.Errorf("global group has %d comments, want 1", n)
+	}
+	a := groups[2].Comments
+	want := []review.Category{review.Must, review.Should, review.Nit, review.Question}
 	for i, c := range want {
 		if a[i].Category != c {
 			t.Errorf("a.go comment %d category = %s, want %s", i, a[i].Category, c)
 		}
 	}
-	if a[0].Start != 7 || a[1].Start != 9 || a[2].Start != 3 {
-		t.Errorf("a.go comments out of position order: %d, %d, %d", a[0].Start, a[1].Start, a[2].Start)
+	if a[0].Start != 7 || a[1].Start != 9 || a[2].Start != 0 || a[3].Start != 3 {
+		t.Errorf("a.go comments out of position order: %d, %d, %d, %d", a[0].Start, a[1].Start, a[2].Start, a[3].Start)
 	}
 }
 
@@ -118,7 +126,7 @@ func TestGroupByFileGroupsByPathWithMustFirst(t *testing.T) {
 func TestSortByCategoryPutsMustFirst(t *testing.T) {
 	got := export.SortByCategory(sampleData().Comments)
 
-	want := []review.Category{review.Must, review.Must, review.Should, review.Question}
+	want := []review.Category{review.Must, review.Must, review.Must, review.Should, review.Nit, review.Question, review.Question}
 	for i, c := range want {
 		if got[i].Category != c {
 			t.Errorf("comment %d category = %s, want %s", i, got[i].Category, c)
@@ -126,6 +134,9 @@ func TestSortByCategoryPutsMustFirst(t *testing.T) {
 	}
 	if got[0].Path != "cmd/main.go" {
 		t.Errorf("first comment path = %s, want cmd/main.go (path order after category)", got[0].Path)
+	}
+	if got[5].Path != "" || got[6].Path != "internal/a.go" {
+		t.Errorf("questions ordered %q, %q, want global before internal/a.go", got[5].Path, got[6].Path)
 	}
 }
 

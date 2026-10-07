@@ -133,18 +133,21 @@ func Quote(code string) string {
 
 // DefaultTemplate is the built-in prompt template: a header with
 // branch, base and round, then the open comments grouped by file with
-// the must comments first. Questions are marked as answer-only.
+// the must comments first. Each comment names its anchor, questions are
+// marked as answer-only. Global comments form the first group.
 const DefaultTemplate = `# Review {{.Branch}} (Basis: {{.Base}}{{if .Round}}, Runde {{.Round}}{{end}})
 
 Bitte arbeite die folgenden Punkte des Reviews ab:
 {{- range groupByFile .Comments}}
 
-## {{.Path}}
+## {{if .Path}}{{.Path}}{{else}}global{{end}}
 {{- range .Comments}}
 
-### {{.Category}}{{if eq .Category "question"}} – nur beantworten, nichts ändern{{end}} (Zeilen {{.Start}}{{if ne .Start .End}}–{{.End}}{{end}})
+### {{.Category}}{{if eq .Category "question"}} – nur beantworten, nichts ändern{{end}} – {{location .}}
+{{- if .Quote}}
 
 {{quote .Quote}}
+{{- end}}
 
 {{.Text}}
 {{- end}}
@@ -156,6 +159,7 @@ var funcs = template.FuncMap{
 	"groupByFile":    GroupByFile,
 	"sortByCategory": SortByCategory,
 	"quote":          Quote,
+	"location":       func(c review.Comment) string { return c.Location() },
 }
 
 // Render executes the template text with the data and returns the

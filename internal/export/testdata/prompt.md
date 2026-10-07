@@ -2,9 +2,15 @@
 
 Bitte arbeite die folgenden Punkte des Reviews ab:
 
+## global
+
+### question – nur beantworten, nichts ändern – global
+
+Passt die Richtung?
+
 ## cmd/main.go
 
-### must (Zeilen 1)
+### must – cmd/main.go:1
 
 ```
 package main
@@ -12,9 +18,17 @@ package main
 
 Hier fehlt ein Fehlerfall.
 
+### must – cmd/main.go:4 (alt, entfernt)
+
+```
+run()
+```
+
+Darf nicht weg.
+
 ## internal/a.go
 
-### must (Zeilen 7)
+### must – internal/a.go:7
 
 ```
 a`b
@@ -22,7 +36,7 @@ a`b
 
 Backtick im Zitat.
 
-### should (Zeilen 9)
+### should – internal/a.go:9
 
 ```
 y
@@ -30,7 +44,11 @@ y
 
 Bitte benennen.
 
-### question – nur beantworten, nichts ändern (Zeilen 3–5)
+### nit – internal/a.go (Datei)
+
+Datei umstrukturieren.
+
+### question – nur beantworten, nichts ändern – internal/a.go:3-5
 
 ```
 a
