@@ -9,6 +9,7 @@
 {
   # https://devenv.sh/basics/
   env.GREET = "lgtm";
+  env.CGO_ENABLED = "0";
 
   # https://devenv.sh/packages/
   packages = with pkgs; [
