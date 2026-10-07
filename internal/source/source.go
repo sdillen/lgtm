@@ -267,16 +267,25 @@ func (s *Source) Default() (Changes, error) {
 	if err != nil {
 		return Changes{}, err
 	}
-	attrs, _, err := s.worktreeAttrs()
+	attrs, err := s.attrs()
 	if err != nil {
 		return Changes{}, err
 	}
+	return Changes{Base: baseRef.Name().Short(), Files: files, GitAttributes: attrs}, nil
+}
+
+// attrs reads the .gitattributes of the working tree, falling back to
+// the one of HEAD: it may be committed without reaching the working
+// tree, e.g. after a fresh clone.
+func (s *Source) attrs() (string, error) {
+	attrs, _, err := s.worktreeAttrs()
+	if err != nil {
+		return "", err
+	}
 	if attrs == "" {
-		// The .gitattributes may be committed without reaching the
-		// working tree, e.g. after a fresh clone.
 		attrs, _, _ = s.headAttrs()
 	}
-	return Changes{Base: baseRef.Name().Short(), Files: files, GitAttributes: attrs}, nil
+	return attrs, nil
 }
 
 // Range resolves a..b: the changes between the trees of the two refs, i.e.
@@ -597,36 +606,16 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 		return nil, err
 	}
 
-	status, err := wt.Status()
+	dirty, err := dirtyPaths(wt)
 	if err != nil {
-		return nil, fmt.Errorf("working tree status: %w", err)
-	}
-	var dirty []string
-	for p, st := range status {
-		if st.Staging != git.Unmodified || st.Worktree != git.Unmodified {
-			dirty = append(dirty, p)
-		}
+		return nil, err
 	}
 	if len(dirty) == 0 {
 		return files, nil
 	}
-	slices.Sort(dirty)
-
-	subs, err := wt.Submodules()
+	subHashes, err := submoduleHashes(wt)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
-	}
-	subStatus, err := subs.Status()
-	if err != nil {
-		return nil, fmt.Errorf("read submodule status: %w", err)
-	}
-	subHashes := make(map[string]plumbing.Hash, len(subStatus))
-	for _, s := range subStatus {
-		current := s.Current
-		if current.IsZero() {
-			current = s.Expected
-		}
-		subHashes[s.Path] = current
+		return nil, err
 	}
 
 	dirtyIndex := make(map[string]bool, len(dirty))
@@ -662,6 +651,45 @@ func (s *Source) workingTreeChanges(base *object.Tree, head *object.Commit) ([]F
 	}
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return files, nil
+}
+
+// dirtyPaths lists the paths whose working tree or index state differs
+// from HEAD, untracked files included, sorted.
+func dirtyPaths(wt *git.Worktree) ([]string, error) {
+	status, err := wt.Status()
+	if err != nil {
+		return nil, fmt.Errorf("working tree status: %w", err)
+	}
+	var dirty []string
+	for p, st := range status {
+		if st.Staging != git.Unmodified || st.Worktree != git.Unmodified {
+			dirty = append(dirty, p)
+		}
+	}
+	slices.Sort(dirty)
+	return dirty, nil
+}
+
+// submoduleHashes maps the path of every submodule to the commit it
+// checks out, or the one the index expects when it is not checked out.
+func submoduleHashes(wt *git.Worktree) (map[string]plumbing.Hash, error) {
+	subs, err := wt.Submodules()
+	if err != nil {
+		return nil, fmt.Errorf("list submodules: %w", err)
+	}
+	subStatus, err := subs.Status()
+	if err != nil {
+		return nil, fmt.Errorf("read submodule status: %w", err)
+	}
+	subHashes := make(map[string]plumbing.Hash, len(subStatus))
+	for _, s := range subStatus {
+		current := s.Current
+		if current.IsZero() {
+			current = s.Expected
+		}
+		subHashes[s.Path] = current
+	}
+	return subHashes, nil
 }
 
 func treeContent(tree *object.Tree, path string) (string, bool, error) {
