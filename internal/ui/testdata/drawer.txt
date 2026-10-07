@@ -1,4 +1,4 @@
-        1 + package main
+        1 + package main 
 ╭──────────────╮
 │ Files        │
 │ cmd/         │

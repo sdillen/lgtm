@@ -1117,12 +1117,16 @@ func (m Model) fileView() string {
 	var b strings.Builder
 	rows := m.rows()
 	m.hl.ensureRows(rows, m.offset-highlightBuffer, m.offset+m.bodyHeight()+highlightBuffer)
+	strip := m.minimapStrip(len(rows), func(j int) color.Color { return m.minimapMark(rows, j) })
+	if m.minimapOn() {
+		width--
+	}
 	if m.wrap {
 		m.renderWrapped(&b, width, len(rows), func(j int) string {
 			r := rows[j]
 			hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
 			return m.renderRow(r, hl)
-		})
+		}, strip)
 	} else {
 		for i := range m.bodyHeight() {
 			if j := m.offset + i; j < len(rows) {
@@ -1131,6 +1135,7 @@ func (m Model) fileView() string {
 				row := ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, "")
 				b.WriteString(ansi.Truncate(row, width, ""))
 			}
+			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
 		}
 	}
@@ -1168,13 +1173,18 @@ func (m Model) fileView() string {
 // screen height. Longer lines are cut with "…", so minified or
 // generated content cannot flood the view.
 func (m Model) wrapLimit() int {
-	return max(1, m.bodyHeight()*m.contentWidth()-1)
+	width := m.contentWidth()
+	if m.minimapOn() {
+		width--
+	}
+	return max(1, m.bodyHeight()*width-1)
 }
 
 // renderWrapped renders the rows with soft wrap: every row fills width
 // cells and continues on the next line. A row longer than the wrap
-// limit is cut with "…".
-func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(int) string) {
+// limit is cut with "…". cells are the minimap strip cells of the
+// screen rows, nil without the strip.
+func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(int) string, cells []string) {
 	out := 0
 	for j := m.offset; j < rows && out < m.bodyHeight(); j++ {
 		text := render(j)
@@ -1186,6 +1196,9 @@ func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(in
 				break
 			}
 			b.WriteString(piece)
+			if cells != nil {
+				b.WriteString(m.minimapCell(cells, out))
+			}
 			b.WriteByte('\n')
 			out++
 		}

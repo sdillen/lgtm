@@ -1,6 +1,6 @@
-⋯ 1 unveränderte Zeile ⋯
-   2      - b
-        2 + B
+⋯ 1 unveränderte Zeile ⋯ 
+   2      - b 
+        2 + B 
 ⋯ 1 unverände╭────────────────────────────────╮
         4 + d│ lgtm                           │
              │ Branch feat/wow  Base main     │

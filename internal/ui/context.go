@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"unicode/utf8"
 
@@ -551,20 +552,29 @@ func (m Model) viewRows() int {
 	return len(m.rows())
 }
 
+// contextView renders the lines of the context file and the bottom
+// line, horizontally scrolled like the review view; with wrap on the
+// lines are soft-wrapped instead. The minimap strip shows the position
+// in the file; context lines carry no change marks.
 func (m Model) contextView() string {
 	width := m.contentWidth()
 	m.context.hl.ensureNew(m.offset + m.bodyHeight() + highlightBuffer)
+	strip := m.minimapStrip(len(m.context.lines), func(int) color.Color { return nil })
+	if m.minimapOn() {
+		width--
+	}
 	var b strings.Builder
 	if m.wrap {
 		m.renderWrapped(&b, width, len(m.context.lines), func(j int) string {
 			return m.renderContextLine(j, j == m.cursor)
-		})
+		}, strip)
 	} else {
 		for i := range m.bodyHeight() {
 			if j := m.offset + i; j < len(m.context.lines) {
 				row := ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, "")
 				b.WriteString(ansi.Truncate(row, width, ""))
 			}
+			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
 		}
 	}

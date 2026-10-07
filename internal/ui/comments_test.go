@@ -534,8 +534,10 @@ func TestZoOnACommentInAClosedFoldOpensTheFold(t *testing.T) {
 	m = typeText(press(m, "c"), "note")
 	m = pressMsg(m, ctrl("s"))
 	m = press(m, "z", "M")
-	if s := screen(m); !strings.Contains(s, "⋯ 7 unveränderte Zeilen ⋯\n            ▎ should: note") {
-		t.Fatalf("comment not shown below the closed fold:\n%s", s)
+	// The rows end in the minimap column; trim it before matching.
+	trimmed := trimRows(screen(m))
+	if !strings.Contains(trimmed, "⋯ 7 unveränderte Zeilen ⋯\n            ▎ should: note") {
+		t.Fatalf("comment not shown below the closed fold:\n%s", screen(m))
 	}
 
 	m = press(m, "g", "g", "j", "j", "j", "j", "z", "o")

@@ -748,3 +748,13 @@ func assertScreen(t *testing.T, m tea.Model, want []string) {
 		t.Errorf("screen:\n%s\nwant:\n%s", got, strings.Join(want, "\n"))
 	}
 }
+
+// trimRows trims the trailing spaces of every row, the blank minimap
+// cells, for row-boundary matches.
+func trimRows(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	return strings.Join(lines, "\n")
+}
