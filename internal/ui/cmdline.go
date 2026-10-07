@@ -66,6 +66,7 @@ const defaultApprovalDelay = 800 * time.Millisecond
 // status line, then quit with exit code 0.
 func (m *Model) approve() tea.Cmd {
 	m.approved = true
+	m.savePosition()
 	m.message = "lgtm – approved"
 	delay := m.opts.ApprovalDelay
 	if delay == 0 {
@@ -181,8 +182,11 @@ func (m *Model) setIgnoreWS(on bool) {
 		return
 	}
 	m.ignoreWS = on
-	for i := range m.files {
-		m.files[i] = m.files[i].WithIgnoreWS(on)
+	for i := range m.full {
+		m.full[i] = m.full[i].WithIgnoreWS(on)
+	}
+	for i := range m.inter {
+		m.inter[i] = m.inter[i].WithIgnoreWS(on)
 	}
 	if m.context == nil && len(m.files) > 0 {
 		m.resetFile()

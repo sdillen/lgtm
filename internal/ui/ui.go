@@ -49,7 +49,7 @@ type Options struct {
 	// template; empty disables it.
 	CfgDir string
 	// Branch, Base and Round are the prompt template data of the
-	// review; Round is 0 until rounds are tracked.
+	// review; Round is the current review round, 0 without rounds.
 	Branch string
 	Base   string
 	Round  int
@@ -71,6 +71,14 @@ type Options struct {
 	// Reload resolves the review subject again: for the change hint
 	// and for R. nil disables reloading.
 	Reload func() ([]diff.ReviewFile, error)
+	// Interdiff resolves the changes since the snapshot of the
+	// previous round, shown instead of the whole review on <leader>i
+	// and marking the files changed since then in the drawer. nil
+	// means there is no previous round.
+	Interdiff func() ([]diff.ReviewFile, error)
+	// Snapshot records the reviewed state again after R, so the
+	// snapshot of the round is what the reviewer saw; nil disables it.
+	Snapshot func() error
 }
 
 // mode is what key presses go to.
@@ -221,6 +229,19 @@ type Model struct {
 	// the reloads, so checks against older files are dropped.
 	changed int
 	loadGen int
+
+	// full are the files of the whole review, inter the files changed
+	// since the previous round (nil without one); files is one of
+	// them, inter while interdiff is on. sinceRound holds the paths of
+	// inter for the drawer marker.
+	full       []diff.ReviewFile
+	inter      []diff.ReviewFile
+	interdiff  bool
+	sinceRound map[string]bool
+
+	// resuming tells that the position where the review was left is
+	// still to be restored; that needs the terminal size.
+	resuming bool
 }
 
 // rowsCache is the cached row list of rows().
@@ -269,11 +290,14 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		dir:       opts.Dir,
 		rowsCache: &rowsCache{},
 	}
+	m.full = files
+	m.loadInterdiff()
 	m.setFiles(files, nil)
 	if len(files) > 0 {
 		m.jumps = []jumpEntry{{file: 0}}
 	}
 	m.resetFile()
+	m.resuming = true
 	return m
 }
 
@@ -327,6 +351,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// Comment rows wrap at the width.
+		m.invalidateRows()
+		if m.resuming {
+			m.resuming = false
+			m.resumePosition()
+		}
 		m.clamp()
 		m.clampHelp()
 		m.maybeMarkRead()
@@ -342,6 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.takeCheck(msg)
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			m.savePosition()
 			m.quitOpen = len(m.state.OpenComments()) > 0
 			return m, tea.Quit
 		}
@@ -419,6 +450,9 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		return m, m.quitAction()
 	case actReload:
 		m.reload()
+	case actInterdiff:
+		m.toggleInterdiff()
+		return m, nil
 	case actCopyPrompt:
 		m.copyPrompt()
 		return m, nil
@@ -628,6 +662,7 @@ func (m *Model) quitAction() tea.Cmd {
 		return nil
 	}
 	m.quitOpen = n > 0
+	m.savePosition()
 	return tea.Quit
 }
 
@@ -1131,6 +1166,12 @@ func (m Model) statusLine() string {
 		path,
 		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
 		fmt.Sprintf("+%d −%d", added, deleted),
+	}
+	if m.opts.Round > 0 {
+		parts = append(parts, fmt.Sprintf("Runde %d", m.opts.Round))
+	}
+	if m.interdiff {
+		parts = append(parts, "[interdiff]")
 	}
 	if len(m.state.Comments()) > 0 {
 		parts = append(parts, m.commentCount())

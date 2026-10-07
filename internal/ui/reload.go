@@ -56,7 +56,7 @@ func (m Model) checkChanges() tea.Cmd {
 // for the next signal.
 func (m Model) takeCheck(msg checkedMsg) (Model, tea.Cmd) {
 	if msg.err == nil && msg.gen == m.loadGen {
-		m.changed = changedFiles(m.files, msg.files)
+		m.changed = changedFiles(m.full, msg.files)
 	}
 	return m, m.waitForChange()
 }
@@ -91,9 +91,11 @@ func (m Model) changeHint() string {
 	return fmt.Sprintf("↻ %d Dateien geändert – R neu laden", m.changed)
 }
 
-// reload resolves the review again and shows its new state. The
-// comments are relocated to their quoted code, and the cursor stays on
-// the code line it was on, at the same height on screen.
+// reload resolves the review again and shows its new state, the whole
+// review or the interdiff. The comments are relocated to their quoted
+// code, the snapshot of the round becomes the shown state, and the
+// cursor stays on the code line it was on, at the same height on
+// screen.
 func (m *Model) reload() {
 	if m.opts.Reload == nil {
 		m.fail("reload is not available")
@@ -109,13 +111,27 @@ func (m *Model) reload() {
 			next[i] = next[i].WithIgnoreWS(true)
 		}
 	}
-	orphans := m.state.Relocate(relocationFiles(m.files), relocationFiles(next))
+	// The anchors live in the whole review: deleted lines number the
+	// old state, which the interdiff does not show.
+	orphans := m.state.Relocate(relocationFiles(m.full), relocationFiles(next))
 	m.saveState()
+	var snapErr error
+	if m.opts.Snapshot != nil {
+		snapErr = m.opts.Snapshot()
+	}
 
 	at := m.place()
 	collapsed := make(map[string]bool, len(m.files))
 	for i, f := range m.files {
 		collapsed[f.Path] = m.fileCollapsed[i]
+	}
+	m.full = next
+	m.loadInterdiff()
+	if m.interdiff && m.inter != nil {
+		next = m.inter
+	} else {
+		m.interdiff = false
+		next = m.full
 	}
 	m.setFiles(next, collapsed)
 	m.changed = 0
@@ -128,6 +144,9 @@ func (m *Model) reload() {
 		m.message += " – 1 Kommentar verwaist"
 	case orphans > 1:
 		m.message += fmt.Sprintf(" – %d Kommentare verwaist", orphans)
+	}
+	if snapErr != nil {
+		m.fail("snapshot: " + snapErr.Error())
 	}
 }
 

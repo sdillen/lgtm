@@ -53,6 +53,7 @@ const (
 	actHelp           keymap.Action = "help"
 	actCmdline        keymap.Action = "command-line"
 	actReload         keymap.Action = "reload"
+	actInterdiff      keymap.Action = "toggle-interdiff"
 	actQuit           keymap.Action = "quit"
 )
 
@@ -97,12 +98,13 @@ var bindings = []keymap.Binding{
 	{Action: actPicker, Keys: []string{"<leader>p"}, Desc: "pick a changed file"},
 	{Action: actPickFileAll, Keys: []string{"<leader>f"}, Desc: "pick any file of the repo"},
 	{Action: actToggleRead, Keys: []string{"<leader>r"}, Desc: "toggle read status"},
+	{Action: actInterdiff, Keys: []string{"<leader>i"}, Desc: "toggle interdiff since the last round"},
 	{Action: actVisual, Keys: []string{"V"}, Desc: "select lines"},
 	{Action: actComment, Keys: []string{"c"}, Desc: "comment the line or selection (edit on a comment)"},
 	{Action: actCommentFile, Keys: []string{"C"}, Desc: "comment the whole file"},
 	{Action: actCommentGlobal, Keys: []string{"<leader>c"}, Desc: "comment the whole review"},
 	{Action: actDeleteComment, Keys: []string{"dd"}, Desc: "delete the comment (dd again confirms)"},
-	{Action: actMarkDone, Keys: []string{"x"}, Desc: "mark the comment as done"},
+	{Action: actMarkDone, Keys: []string{"x"}, Desc: "mark the comment as done (again: open)"},
 	{Action: actCopyPrompt, Keys: []string{"Y"}, Desc: "copy the review prompt to the clipboard"},
 	{Action: actCopyComment, Keys: []string{"yc"}, Desc: "copy the comment under the cursor"},
 	{Action: actThemeCmd, Keys: []string{"<leader>t"}, Desc: "choose theme"},

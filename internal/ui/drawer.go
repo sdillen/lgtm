@@ -64,7 +64,7 @@ func (m Model) rowOfFile(fi int) int {
 
 // treeLines renders the file tree rows. highlight is the row shown with
 // the cursor background, -1 for none. Read files carry a checkmark,
-// commented files a dot.
+// commented files a dot, files changed since the previous round a Δ.
 func (m Model) treeLines(highlight int) []string {
 	lines := make([]string, len(m.tree))
 	for i, r := range m.tree {
@@ -79,6 +79,9 @@ func (m Model) treeLines(highlight int) []string {
 			}
 			if m.hasComments(m.files[r.file].Path) {
 				text += "  " + m.theme.Styles.Status.Render("●")
+			}
+			if m.sinceRound[m.files[r.file].Path] {
+				text += "  " + m.theme.Styles.Status.Render("Δ")
 			}
 		}
 		if i == highlight {

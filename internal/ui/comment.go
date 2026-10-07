@@ -104,6 +104,12 @@ func (m *Model) openComment() {
 	}
 	old := false
 	if start == 0 {
+		if m.interdiff {
+			// The deleted lines of the interdiff number the
+			// snapshot, not the old state the anchor refers to.
+			m.fail("gelöschte Zeilen im Gesamt-Diff kommentieren (<leader>i)")
+			return
+		}
 		// The selection has no line of the new file: it anchors in
 		// the old state, on the deleted lines.
 		old = true
@@ -379,7 +385,9 @@ func (m Model) noteRows(fi, line int) []row {
 	if l.New != 0 {
 		rows = append(rows, m.lineNotes(l.New, false, line)...)
 	}
-	if l.Old != 0 {
+	// The deleted lines of the interdiff number the snapshot, not
+	// the old state the deleted-line comments are anchored in.
+	if l.Old != 0 && !m.interdiff {
 		rows = append(rows, m.lineNotes(l.Old, true, line)...)
 	}
 	if line == 0 {
@@ -426,6 +434,9 @@ func (m Model) noteRowLines(c review.Comment, line int) []row {
 	// The text wraps after the gutter and the "▎ " bar.
 	width := max(1, m.contentWidth()-gutterWidth-2)
 	text := string(c.Category) + ": " + c.Text
+	if m.state.Earlier(c) {
+		text = fmt.Sprintf("Runde %d · ", c.Round) + text
+	}
 	if c.Orphaned {
 		// The code is gone; the last known anchor tells where the
 		// comment was.
@@ -447,10 +458,11 @@ type note struct {
 }
 
 // renderNote renders a comment row in the colour of its category,
-// indented past the gutter. Done comments are dimmed.
+// indented past the gutter. Done comments and comments of earlier
+// rounds are dimmed.
 func (m Model) renderNote(n *note, cursor bool) string {
 	style := m.categoryStyle(n.category)
-	if n.comment.Status != review.Open {
+	if n.comment.Status != review.Open || m.state.Earlier(n.comment) {
 		style = m.theme.Styles.Fold
 	}
 	pad := lipgloss.NewStyle()
@@ -512,18 +524,22 @@ func (m *Model) deleteComment() {
 	m.message = "comment deleted"
 }
 
-// markDone marks the comment under the cursor as done; done comments
-// stay visible but are no longer exported.
+// markDone marks the comment under the cursor as done, or a done one
+// as open again; done comments stay visible but are no longer exported.
 func (m *Model) markDone() {
 	c, ok := m.commentAtCursor()
 	if !ok {
 		m.fail("move the cursor to a comment to mark as done")
 		return
 	}
-	m.state.SetCommentStatus(c.ID, review.Done)
+	status, msg := review.Done, "comment marked as done"
+	if c.Status == review.Done {
+		status, msg = review.Open, "comment open again"
+	}
+	m.state.SetCommentStatus(c.ID, status)
 	m.loadFileComments()
 	m.saveState()
-	m.message = "comment marked as done"
+	m.message = msg
 }
 
 // commentPos is the position of a comment in the review: the file index
@@ -552,6 +568,9 @@ func (m Model) commentPositions() []commentPos {
 		}
 		if fi < 0 {
 			continue // the file is no longer part of the review
+		}
+		if c.Old && m.interdiff {
+			continue // deleted-line comments are not shown in the interdiff
 		}
 		line := 0
 		if !c.Orphaned && (c.Start != 0 || c.End != 0) {
