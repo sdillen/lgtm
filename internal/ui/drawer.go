@@ -64,7 +64,8 @@ func (m Model) rowOfFile(fi int) int {
 }
 
 // treeLines renders the file tree rows. highlight is the row shown with
-// the cursor background, -1 for none. Read files carry a checkmark.
+// the cursor background, -1 for none. Read files carry a checkmark,
+// commented files a dot.
 func (m Model) treeLines(highlight int) []string {
 	lines := make([]string, len(m.tree))
 	for i, r := range m.tree {
@@ -77,6 +78,9 @@ func (m Model) treeLines(highlight int) []string {
 			if m.state.Read(m.files[r.file].Path) {
 				text += "  " + m.theme.Styles.Status.Render("✓")
 			}
+			if m.hasComments(m.files[r.file].Path) {
+				text += "  " + m.theme.Styles.Status.Render("●")
+			}
 		}
 		if i == highlight {
 			style = style.Background(m.theme.Styles.Cursor)
@@ -84,6 +88,16 @@ func (m Model) treeLines(highlight int) []string {
 		lines[i] = style.Render(text)
 	}
 	return lines
+}
+
+// hasComments reports whether the file carries at least one comment.
+func (m Model) hasComments(path string) bool {
+	for _, c := range m.state.Comments() {
+		if c.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 // drawerBox is the file drawer: the tree in a rounded box, cut to the

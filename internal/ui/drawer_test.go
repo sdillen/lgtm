@@ -367,6 +367,26 @@ func TestHelpShowsTheNewBindings(t *testing.T) {
 	}
 }
 
+// TestDrawerMarksCommentedFiles pins the acceptance criterion
+// "Kommentierte Dateien sind im Drawer markiert": the tree shows a
+// marker behind files that carry a comment.
+func TestDrawerMarksCommentedFiles(t *testing.T) {
+	dir := t.TempDir()
+	m := start(ui.New([]diff.ReviewFile{file, small}, "main", themeFor, withState(dir)), 60, 12)
+	m = press(m, "j", "j", "c")
+	m = typeText(m, "note")
+	m = pressMsg(m, ctrl("s"))
+
+	m = press(leader(m), "d")
+	s := screen(m)
+	if row := rowContaining(m, "main.go"); !strings.Contains(row, "●") {
+		t.Errorf("drawer does not mark the commented file:\n%s", s)
+	}
+	if row := rowContaining(m, "small.txt"); strings.Contains(row, "●") {
+		t.Errorf("drawer marks the uncommented file:\n%s", s)
+	}
+}
+
 // TestDrawerCutsLongTrees pins that a drawer taller than the terminal is
 // cut with a marker instead of overflowing, so the status line stays
 // visible.
