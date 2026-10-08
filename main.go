@@ -114,16 +114,23 @@ func runClear(dir string, yes bool) (int, error) {
 			return exitOK, nil
 		}
 	}
-	if state.ID != "" {
-		if err := src.DeleteSnapshots("refs/lgtm/" + state.ID + "/"); err != nil {
-			return exitError, err
-		}
-	}
-	if _, err := review.Clear(root); err != nil {
+	if err := clearReview(src, root, state); err != nil {
 		return exitError, err
 	}
 	fmt.Println("review state cleared")
 	return exitOK, nil
+}
+
+// clearReview deletes the snapshot refs of the review and the .lgtm
+// directory below root, for lgtm clear and after :lgtm approved.
+func clearReview(src *source.Source, root string, state *review.State) error {
+	if state.ID != "" {
+		if err := src.DeleteSnapshots("refs/lgtm/" + state.ID + "/"); err != nil {
+			return err
+		}
+	}
+	_, err := review.Clear(root)
+	return err
 }
 
 // runProgram runs the TUI. It is a variable so tests can capture the model
@@ -274,8 +281,17 @@ func run(dir string, args []string) (int, error) {
 		LoadTheme: func(name string) (theme.Theme, error) {
 			return theme.Load(name, cfgDir, profile)
 		},
-		State:  state,
-		Dir:    stateDir,
+		State: state,
+		Dir:   stateDir,
+		// Approving ends the review for good.
+		Clear: func() error {
+			if state == nil {
+				return nil
+			}
+			repo.mu.Lock()
+			defer repo.mu.Unlock()
+			return clearReview(src, stateDir, state)
+		},
 		CfgDir: cfgDir,
 		Branch: branch,
 		Base:   base,

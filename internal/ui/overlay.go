@@ -58,7 +58,7 @@ func (m *Model) clampHelp() {
 var commands = []struct{ usage, desc string }{
 	{":q", "quit (warns with open comments)"},
 	{":q!", "quit without the warning"},
-	{":lgtm", "approve the review and exit 0"},
+	{":lgtm", "approve, clear the review and exit 0"},
 	{":theme [name]", "switch the theme, or show the current one"},
 	{":set [no]unified", "set an option (name! toggles, name? shows)"},
 	{":set [no]sidebar", "keep the file tree visible"},

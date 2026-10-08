@@ -352,11 +352,13 @@ func TestCtrlCQuitsAndReportsOpenComments(t *testing.T) {
 }
 
 // TestColonLgtmApprovesAndQuitsWithZero pins the acceptance criterion
-// ":lgtm beendet mit Exit-Code 0": a confirmation moment, then quit.
+// ":lgtm beendet mit Exit-Code 0": a confirmation moment, then quit. With
+// open comments the first :lgtm only warns, the second one approves.
 func TestColonLgtmApprovesAndQuitsWithZero(t *testing.T) {
 	opts := ui.Options{State: stateWithComments(), ApprovalDelay: time.Nanosecond}
 	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, opts), 40, 5)
 
+	m, _ = enter(typeText(press(m, ":"), "lgtm"))
 	m = typeText(press(m, ":"), "lgtm")
 	m, cmd := enter(m)
 

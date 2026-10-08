@@ -58,6 +58,9 @@ type Options struct {
 	// Copy copies the prompt to the clipboard; nil means the default
 	// OSC 52/tool chain.
 	Copy func(string) error
+	// Clear deletes the review state once :lgtm has approved; nil keeps
+	// it.
+	Clear func() error
 	// ApprovalDelay is the confirmation moment of :lgtm; 0 means the
 	// default of 1.5s.
 	ApprovalDelay time.Duration
@@ -221,6 +224,9 @@ type Model struct {
 	quitOpen bool
 	// approved is true after :lgtm; the review ends with exit code 0.
 	approved bool
+	// approveArmed is true after a :lgtm that only warned about open
+	// comments; the next :lgtm approves.
+	approveArmed bool
 
 	// draft is the comment being written while the float is open;
 	// fileComments caches the comments of the current file,
@@ -436,6 +442,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.animCmd()
 		}
 	case approveMsg:
+		if m.opts.Clear != nil {
+			if err := m.opts.Clear(); err != nil {
+				m.approved = false
+				m.fail("clear failed: " + err.Error())
+				return m, nil
+			}
+		}
 		return m, tea.Quit
 	case toastTickMsg:
 		if m.message != "" && time.Since(m.messageAt) >= m.toastTTL() {

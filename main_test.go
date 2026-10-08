@@ -487,15 +487,19 @@ func TestColonLgtmApprovesWithExitCodeZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := got()
-	// Type :lgtm on the command line and run it with <cr>.
-	for _, k := range []tea.KeyPressMsg{
-		{Code: ':', Text: ":"},
-		{Code: 'l', Text: "l"}, {Code: 'g', Text: "g"},
-		{Code: 't', Text: "t"}, {Code: 'm', Text: "m"},
-	} {
-		m, _ = m.Update(k)
+	// Type :lgtm on the command line and run it with <cr>; with an open
+	// comment the first run only warns, the second one approves.
+	var cmd tea.Cmd
+	for range 2 {
+		for _, k := range []tea.KeyPressMsg{
+			{Code: ':', Text: ":"},
+			{Code: 'l', Text: "l"}, {Code: 'g', Text: "g"},
+			{Code: 't', Text: "t"}, {Code: 'm', Text: "m"},
+		} {
+			m, _ = m.Update(k)
+		}
+		m, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	}
-	m, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal(":lgtm returned no command")
 	}
@@ -863,5 +867,55 @@ func TestClearAsksForConfirmation(t *testing.T) {
 		if cleared := err != nil; cleared != wantCleared {
 			t.Errorf("answer %q: cleared = %v, want %v", answer, cleared, wantCleared)
 		}
+	}
+}
+
+// TestApprovingClearsTheReviewState pins that :lgtm ends the review for
+// good: after the confirmation moment .lgtm/ and the snapshot refs are
+// gone, so the next run starts a fresh review.
+func TestApprovingClearsTheReviewState(t *testing.T) {
+	dir := repoWithRange(t)
+	old := runProgram
+	t.Cleanup(func() { runProgram = old })
+	runProgram = func(m tea.Model) (tea.Model, error) {
+		m, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 6})
+		m = pressMain(m, "j", ":", "l", "g", "t", "m")
+		m, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		batch, ok := cmd().(tea.BatchMsg)
+		if !ok {
+			t.Fatalf(":lgtm returned %T, want the confirmation tick batch", cmd())
+		}
+		msgs := make(chan tea.Msg, len(batch))
+		for _, c := range batch {
+			go func() { msgs <- c() }()
+		}
+		for range batch {
+			select {
+			case msg := <-msgs:
+				var next tea.Cmd
+				m, next = m.Update(msg)
+				if next != nil {
+					if _, quit := next().(tea.QuitMsg); quit {
+						return m, nil
+					}
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("approving never quit")
+			}
+		}
+		t.Fatal("approving never quit")
+		return m, nil
+	}
+
+	code, err := run(dir, nil)
+
+	if err != nil || code != 0 {
+		t.Fatalf("run = %d, %v; want 0, nil", code, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lgtm")); err == nil {
+		t.Error(".lgtm still exists after approving")
+	}
+	if hasSnapshotRefs(t, dir) {
+		t.Error("refs/lgtm/ refs still exist after approving")
 	}
 }

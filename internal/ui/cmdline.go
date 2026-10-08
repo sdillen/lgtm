@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -40,6 +41,8 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.quitArmed = false
+	armed := m.approveArmed
+	m.approveArmed = false
 	switch name, args := fields[0], fields[1:]; name {
 	case "q", "quit":
 		return m, m.quitAction()
@@ -47,6 +50,11 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 		m.quitOpen = len(m.state.OpenComments()) > 0
 		return m, tea.Quit
 	case "lgtm":
+		if n := len(m.state.OpenComments()); n > 0 && !armed {
+			m.approveArmed = true
+			m.message = fmt.Sprintf("%d offene Kommentare werden verworfen – nochmal :lgtm bestätigt", n)
+			return m, nil
+		}
 		return m, m.approve()
 	case "theme":
 		m.setTheme(args)
@@ -64,7 +72,8 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 const defaultApprovalDelay = 1500 * time.Millisecond
 
 // approve ends the review approved: a short confirmation moment in the
-// middle of the screen, then quit with exit code 0.
+// middle of the screen, then clear the review state and quit with exit
+// code 0.
 func (m *Model) approve() tea.Cmd {
 	m.approved = true
 	m.savePosition()
