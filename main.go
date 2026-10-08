@@ -268,6 +268,7 @@ func run(dir string, args []string) (int, error) {
 		interdiff, snapshot, round = r.interdiff(), r.snapshot, state.Round()
 	}
 	profile := termProfile()
+	base, branch := subjectEnds(subj, changes, src.HeadBranch())
 	final, err := runProgram(ui.New(files, subjectLabel(subj, changes), th, ui.Options{
 		Keymap: km,
 		LoadTheme: func(name string) (theme.Theme, error) {
@@ -276,8 +277,8 @@ func run(dir string, args []string) (int, error) {
 		State:  state,
 		Dir:    stateDir,
 		CfgDir: cfgDir,
-		Branch: src.HeadBranch(),
-		Base:   changes.Base,
+		Branch: branch,
+		Base:   base,
 		Round:  round,
 		// The repo search and the all-files picker ask the source
 		// for the working tree.
@@ -512,4 +513,32 @@ func subjectLabel(subj subject, changes source.Changes) string {
 		return subj.rev
 	}
 	return ""
+}
+
+// subjectEnds names where the review runs from and to, for the status
+// line, the start screen and the prompt: the default review runs from
+// the default branch to the checked-out branch, a..b from a to b and a
+// commit from its parent to itself.
+func subjectEnds(subj subject, changes source.Changes, headBranch string) (base, branch string) {
+	switch subj.kind {
+	case subjectRange:
+		return shortRev(subj.a), shortRev(subj.b)
+	case subjectCommit:
+		return changes.Base, shortRev(subj.rev)
+	}
+	return changes.Base, headBranch
+}
+
+// shortRev shortens a full commit hash to seven characters like git
+// does and leaves every other rev as the user gave it.
+func shortRev(rev string) string {
+	if len(rev) != 40 && len(rev) != 64 {
+		return rev
+	}
+	for _, r := range rev {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return rev
+		}
+	}
+	return rev[:7]
 }

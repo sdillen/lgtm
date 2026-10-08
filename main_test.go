@@ -152,6 +152,40 @@ func TestRunCommitShowsOnlyThatCommit(t *testing.T) {
 	}
 }
 
+// TestRunNamesTheEndsOfTheReviewInTheStatusLine pins that the review
+// range names what is reviewed, not the checked-out branch: a..b runs
+// from a to b, a commit from its parent to itself, hashes shortened.
+func TestRunNamesTheEndsOfTheReviewInTheStatusLine(t *testing.T) {
+	dir := repoWithRange(t)
+	head, err := repoHead(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainHash, err := repoRef(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "main → feature"},
+		{[]string{mainHash + ".." + head}, mainHash[:7] + " → " + head[:7]},
+		{[]string{head}, mainHash[:7] + " → " + head[:7]},
+	} {
+		got := captureProgram(t)
+		if _, err := run(dir, c.args); err != nil {
+			t.Fatal(err)
+		}
+		m, _ := got().Update(tea.WindowSizeMsg{Width: 120, Height: 5})
+		m = pressMain(m, "j") // the first key dismisses the start screen
+		rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+		if last := rows[len(rows)-1]; !strings.HasPrefix(last, c.want+"  ") {
+			t.Errorf("lgtm %v: status line %q, want it to start with %q", c.args, last, c.want)
+		}
+	}
+}
+
 func TestRunWithoutChangesShowsHintNamingTheSubject(t *testing.T) {
 	dir := repoWithRange(t)
 	got := captureProgram(t)
@@ -311,6 +345,19 @@ func repoHead(dir string) (string, error) {
 		return "", err
 	}
 	ref, err := repo.Head()
+	if err != nil {
+		return "", err
+	}
+	return ref.Hash().String(), nil
+}
+
+// repoRef returns the full hash of the branch name.
+func repoRef(dir, name string) (string, error) {
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return "", err
+	}
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(name), true)
 	if err != nil {
 		return "", err
 	}
