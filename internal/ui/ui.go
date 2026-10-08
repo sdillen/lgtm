@@ -1284,8 +1284,8 @@ func (m Model) contentWidth() int {
 // markers of the active options and the keys of a pending sequence. A
 // rename names both paths as "old → new". On a narrow terminal the
 // line gives way step by step: the progress label goes, then the
-// review range and the progress bar, and finally the path is shortened in the middle, so
-// the state markers stay readable.
+// review range and the progress bar, and finally the path is
+// shortened in the middle, so the state markers stay readable.
 func (m Model) statusLine(width int) string {
 	for level := 0; level <= 3; level++ {
 		if s := m.statusAt(level, -1); width <= 0 || ansi.StringWidth(s) <= width {
