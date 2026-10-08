@@ -2,15 +2,20 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/term"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
@@ -46,6 +51,81 @@ func versionString() string {
 	return fmt.Sprintf("lgtm version %s (commit %s)", version, commit)
 }
 
+// usageString is the text of --help.
+func usageString() string {
+	return `lgtm - terminal UI for reviewing code changes
+
+Usage:
+  lgtm [flags] [<commit> | <a>..<b>]   review the changes (default: since the default branch)
+  lgtm clear [-y]                      delete the review state of this repository
+
+Flags:
+  --theme <name>      theme name, overrides the config
+  --print-template    print the built-in prompt template and exit
+  -y, --yes           with clear: do not ask for confirmation
+  --version           print the version and exit
+  -h, --help          print this help and exit
+
+clear removes .lgtm/ (state and review.md) and the snapshot refs under
+refs/lgtm/. Without a terminal it requires --yes.
+
+Exit codes:
+  0   approved (:lgtm) or no open comments
+  1   quit with open comments
+  2   error
+`
+}
+
+// stdin and stdinIsTerminal are variables so tests can answer the
+// confirmation of clear.
+var (
+	stdin           io.Reader = os.Stdin
+	stdinIsTerminal           = func() bool { return term.IsTerminal(os.Stdin.Fd()) }
+)
+
+// runClear deletes the review state of the repository containing dir: the
+// .lgtm directory and the snapshot refs of the review. Without yes it asks
+// first, and without a terminal it refuses rather than deleting silently.
+func runClear(dir string, yes bool) (int, error) {
+	src, err := source.Open(dir)
+	if err != nil {
+		return exitError, err
+	}
+	root := src.WorktreeDir()
+	if root == "" {
+		return exitError, errors.New("repository has no working tree")
+	}
+	state, err := review.Load(root)
+	if err != nil {
+		return exitError, err
+	}
+	if _, err := os.Stat(filepath.Join(root, ".lgtm")); errors.Is(err, fs.ErrNotExist) {
+		fmt.Println("nothing to clear")
+		return exitOK, nil
+	}
+	if !yes {
+		if !stdinIsTerminal() {
+			return exitError, errors.New("refusing to clear without a terminal; use --yes")
+		}
+		fmt.Printf("Delete review state (%d open comments, %d rounds)? [y/N] ", len(state.OpenComments()), state.Round())
+		answer, _ := bufio.NewReader(stdin).ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+			fmt.Println("aborted")
+			return exitOK, nil
+		}
+	}
+	if state.ID != "" {
+		if err := src.DeleteSnapshots("refs/lgtm/" + state.ID + "/"); err != nil {
+			return exitError, err
+		}
+	}
+	if _, err := review.Clear(root); err != nil {
+		return exitError, err
+	}
+	fmt.Println("review state cleared")
+	return exitOK, nil
+}
+
 // runProgram runs the TUI. It is a variable so tests can capture the model
 // instead of opening a terminal.
 var runProgram = func(m tea.Model) (tea.Model, error) {
@@ -70,6 +150,9 @@ type subject struct {
 
 // options are the command line flags.
 type options struct {
+	help          bool   // --help, -h: print the usage and exit
+	clear         bool   // clear: delete the review state
+	yes           bool   // --yes, -y: clear without asking
 	theme         string // --theme: theme name, overrides the config
 	version       bool   // --version: print version and exit
 	printTemplate bool   // --print-template: print the built-in prompt template
@@ -91,6 +174,10 @@ func run(dir string, args []string) (int, error) {
 	if err != nil {
 		return exitError, err
 	}
+	if opt.help {
+		fmt.Print(usageString())
+		return exitOK, nil
+	}
 	if opt.version {
 		fmt.Println(versionString())
 		return exitOK, nil
@@ -98,6 +185,9 @@ func run(dir string, args []string) (int, error) {
 	if opt.printTemplate {
 		fmt.Print(export.DefaultTemplate)
 		return exitOK, nil
+	}
+	if opt.clear {
+		return runClear(dir, opt.yes)
 	}
 	cfgDir, err := config.Dir()
 	if err != nil {
@@ -357,6 +447,10 @@ func parse(args []string) (subject, options, error) {
 			rest = nil
 		case arg == "--version":
 			opt.version = true
+		case arg == "--help" || arg == "-h":
+			opt.help = true
+		case arg == "--yes" || arg == "-y":
+			opt.yes = true
 		case arg == "--print-template":
 			opt.printTemplate = true
 		case strings.HasPrefix(arg, "--theme="):
@@ -371,6 +465,16 @@ func parse(args []string) (subject, options, error) {
 		default:
 			positional = append(positional, arg)
 		}
+	}
+	if len(positional) > 0 && positional[0] == "clear" {
+		if len(positional) > 1 {
+			return subject{}, opt, errors.New("clear takes no arguments")
+		}
+		opt.clear = true
+		return subject{kind: subjectDefault}, opt, nil
+	}
+	if opt.yes {
+		return subject{}, opt, errors.New("--yes only applies to clear")
 	}
 	subj, err := parseSubject(positional)
 	return subj, opt, err
@@ -392,7 +496,7 @@ func parseSubject(args []string) (subject, error) {
 		}
 		return subject{kind: subjectCommit, rev: arg}, nil
 	default:
-		return subject{}, errors.New("usage: lgtm [--theme <name>] [--version] [<commit> | <a>..<b>]")
+		return subject{}, errors.New("usage: lgtm [flags] [<commit> | <a>..<b>] (see lgtm --help)")
 	}
 }
 

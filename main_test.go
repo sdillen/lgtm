@@ -655,3 +655,165 @@ func TestRunWatchesTheWorkingTreeAndReloadsOnR(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseHelpFlags(t *testing.T) {
+	for _, arg := range []string{"--help", "-h"} {
+		_, opt, err := parse([]string{arg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !opt.help {
+			t.Errorf("%s: help = false, want true", arg)
+		}
+	}
+}
+
+func TestHelpPrintsUsageAndExitsZero(t *testing.T) {
+	stdout, stderr, code := runHelper(t, t.TempDir(), "--help")
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	for _, want := range []string{"Usage:", "lgtm clear", "--theme", "--version", "--print-template", "--help", "Exit codes"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestParseClear(t *testing.T) {
+	subj, opt, err := parse([]string{"clear", "-y"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opt.clear || !opt.yes {
+		t.Errorf("clear = %v, yes = %v, want both true", opt.clear, opt.yes)
+	}
+	if subj.kind != subjectDefault {
+		t.Errorf("subject kind = %v, want default", subj.kind)
+	}
+}
+
+func TestParseClearRejectsExtraArgumentsAndStrayYes(t *testing.T) {
+	if _, _, err := parse([]string{"clear", "main"}); err == nil {
+		t.Error("clear with a subject: want an error")
+	}
+	if _, _, err := parse([]string{"--yes"}); err == nil {
+		t.Error("--yes without clear: want an error")
+	}
+}
+
+// repoWithReviewState is repoWithRange plus an open comment and a
+// snapshot ref of the review.
+func repoWithReviewState(t *testing.T) string {
+	t.Helper()
+	dir := repoWithRange(t)
+	stateWithComment(t, dir)
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := review.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := s.SnapshotRef(1)
+	s.StartRound(ref, time.Now())
+	if err := s.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName(ref), head.Hash())); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func hasSnapshotRefs(t *testing.T, dir string) bool {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := repo.References()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	_ = refs.ForEach(func(r *plumbing.Reference) error {
+		found = found || strings.HasPrefix(r.Name().String(), "refs/lgtm/")
+		return nil
+	})
+	return found
+}
+
+func TestClearWithYesRemovesStateAndSnapshotRefs(t *testing.T) {
+	dir := repoWithReviewState(t)
+
+	stdout, _, code := runHelper(t, dir, "clear", "--yes")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "cleared") {
+		t.Errorf("stdout = %q, want a confirmation", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lgtm")); err == nil {
+		t.Error(".lgtm still exists")
+	}
+	if hasSnapshotRefs(t, dir) {
+		t.Error("refs/lgtm/ refs still exist")
+	}
+}
+
+func TestClearWithoutStateIsIdempotent(t *testing.T) {
+	stdout, _, code := runHelper(t, repoWithRange(t), "clear")
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "nothing to clear") {
+		t.Errorf("stdout = %q, want \"nothing to clear\"", stdout)
+	}
+}
+
+func TestClearWithoutTerminalAndWithoutYesFailsAndKeepsTheState(t *testing.T) {
+	dir := repoWithReviewState(t)
+
+	_, stderr, code := runHelper(t, dir, "clear")
+
+	if code != exitError {
+		t.Errorf("exit code = %d, want %d", code, exitError)
+	}
+	if !strings.Contains(stderr, "--yes") {
+		t.Errorf("stderr = %q, want a hint to --yes", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lgtm")); err != nil {
+		t.Errorf(".lgtm was removed: %v", err)
+	}
+}
+
+func TestClearAsksForConfirmation(t *testing.T) {
+	oldIn, oldTTY := stdin, stdinIsTerminal
+	t.Cleanup(func() { stdin, stdinIsTerminal = oldIn, oldTTY })
+	stdinIsTerminal = func() bool { return true }
+
+	for answer, wantCleared := range map[string]bool{"y\n": true, "n\n": false, "\n": false} {
+		dir := repoWithReviewState(t)
+		stdin = strings.NewReader(answer)
+		if _, err := run(dir, []string{"clear"}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := os.Stat(filepath.Join(dir, ".lgtm"))
+		if cleared := err != nil; cleared != wantCleared {
+			t.Errorf("answer %q: cleared = %v, want %v", answer, cleared, wantCleared)
+		}
+	}
+}
