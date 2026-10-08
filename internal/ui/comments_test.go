@@ -84,7 +84,7 @@ func TestSavedCommentsAppearInlineInTheirCategoryColour(t *testing.T) {
 		"            ▎ must: rename this",
 		"   3    3   end",
 		"",
-		"main.go  1/1  +1 −1  1 comment",
+		"main.go  1/1  +1 −1   1 must",
 	})
 	// must is #f7768e in tokyo night night.
 	if row := rowContaining(m, "rename this"); !strings.Contains(row, "38;2;247;118;142") {
@@ -181,7 +181,7 @@ func TestCommentsSurviveARestart(t *testing.T) {
 	restarted := start(ui.New([]diff.ReviewFile{file}, "main", themeFor,
 		ui.Options{State: readState(t, dir), Dir: dir}), 60, 12)
 
-	if s := screen(restarted); !strings.Contains(s, "▎ should: keep me") || !strings.Contains(s, "1 comment") {
+	if s := screen(restarted); !strings.Contains(s, "▎ should: keep me") || !strings.Contains(s, "● 1 should") {
 		t.Errorf("comment lost after restart:\n%s", s)
 	}
 }
@@ -509,7 +509,7 @@ func TestLongCommentsWrapInline(t *testing.T) {
 		"",
 		"",
 		"",
-		"main.go  1/1  +1 −1  1 comment",
+		"main.go  1/1  +1 −1  ● 1 should",
 	})
 }
 

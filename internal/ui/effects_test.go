@@ -162,3 +162,59 @@ func TestStartScreenBarsHeatUp(t *testing.T) {
 		t.Errorf("bar has %d colours, want a ramp", n)
 	}
 }
+
+// TestStatusLineSqueezesOnNarrowTerminals pins idea 7: the progress
+// label goes first, then the bar, and only then the path is cut in the
+// middle, keeping the file name and the state markers.
+func TestStatusLineSqueezesOnNarrowTerminals(t *testing.T) {
+	long := diff.ReviewFile{Path: "internal/deeply/nested/window.go", Lines: file.Lines}
+	files := []diff.ReviewFile{long, file}
+	last := func(width int) string {
+		m := start(ui.New(files, "main", themeFor, ui.Options{}), width, 5)
+		rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+		return strings.TrimRight(rows[len(rows)-1], " ")
+	}
+	for _, c := range []struct {
+		width int
+		want  []string
+		not   []string
+	}{
+		{80, []string{"internal/deeply/nested/window.go", "▰", "gelesen"}, nil},
+		{60, []string{"internal/deeply/nested/window.go", "▰"}, []string{"gelesen"}},
+		{46, []string{"internal/deeply/nested/window.go", "1/2", "+1 −1"}, []string{"▰"}},
+		{30, []string{"…/window.go", "+1 −1"}, []string{"▰", "nested"}},
+	} {
+		got := last(c.width)
+		if w := ansi.StringWidth(got); w > c.width {
+			t.Errorf("width %d: line is %d cells wide: %q", c.width, w, got)
+		}
+		for _, s := range c.want {
+			if !strings.Contains(got, s) {
+				t.Errorf("width %d: %q lacks %q", c.width, got, s)
+			}
+		}
+		for _, s := range c.not {
+			if strings.Contains(got, s) {
+				t.Errorf("width %d: %q still has %q", c.width, got, s)
+			}
+		}
+	}
+}
+
+// TestStatusLineShowsProgressAndBadges pins the progress bar of read
+// files and the open comments as badges per category.
+func TestStatusLineShowsProgressAndBadges(t *testing.T) {
+	st := stateWithComments()
+	m := start(ui.New([]diff.ReviewFile{file, big}, "main", themeFor, ui.Options{State: st}), 100, 8)
+	line := func() string {
+		rows := strings.Split(m.View().Content, "\n")
+		return rows[len(rows)-1]
+	}
+	if got := ansi.Strip(line()); !strings.Contains(got, "/2 gelesen") {
+		t.Errorf("no progress in %q", got)
+	}
+	got := ansi.Strip(line())
+	if !strings.Contains(got, " 1 must ") || !strings.Contains(got, "● 1 question") {
+		t.Errorf("no comment badges in %q", got)
+	}
+}

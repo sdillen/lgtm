@@ -478,14 +478,14 @@ func TestBracketFJumpsBetweenFiles(t *testing.T) {
 	assertScreen(t, m, []string{
 		"   1      - x",
 		"        1 + X",
-		"small.txt  2/2  +1 −1",
+		"small.txt  2/2  +1 −1  ▰▰▰▱▱▱ 1/2",
 	})
 
 	m = press(m, "[", "f")
 	assertScreen(t, m, []string{
 		"⋯ 1 unveränderte Zeile ⋯",
 		"   2      - b",
-		"big.go  1/2  +2 −2",
+		"big.go  1/2  +2 −2  ▰▰▰▱▱▱ 1/2 gelesen",
 	})
 }
 
@@ -651,7 +651,7 @@ func TestCountRepeatsFileJumps(t *testing.T) {
 	assertScreen(t, m, []string{
 		"   1      - x",
 		"        1 + X",
-		"small.txt  2/2  +1 −1",
+		"small.txt  2/2  +1 −1  ▰▰▰▱▱▱ 1/2",
 	})
 }
 

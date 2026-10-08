@@ -1152,7 +1152,7 @@ func (m Model) fileView() string {
 	}
 	bottom := m.bottomLine()
 	if bottom == "" {
-		bottom = m.statusLine()
+		bottom = m.statusLine(width)
 	}
 	b.WriteString(ansi.Truncate(bottom, width, ""))
 	if !m.sidebar {
@@ -1225,52 +1225,85 @@ func (m Model) contentWidth() int {
 	return max(1, m.width-m.sidebarWidth()-1)
 }
 
-// statusLine shows file path, position in the file list and the +/−
-// statistics, plus the markers of the active options and the keys of a
-// pending sequence. A rename names both paths as "old → new".
-func (m Model) statusLine() string {
+// statusLine shows file path, position in the file list, the +/−
+// statistics, the review progress and the comment badges, plus the
+// markers of the active options and the keys of a pending sequence. A
+// rename names both paths as "old → new". On a narrow terminal the
+// line gives way step by step: the progress label goes, then the
+// progress bar, and finally the path is shortened in the middle, so
+// the state markers stay readable.
+func (m Model) statusLine(width int) string {
+	for level := 0; level <= 2; level++ {
+		if s := m.statusAt(level, -1); width <= 0 || ansi.StringWidth(s) <= width {
+			return s
+		}
+	}
+	// The rest of the line without the path is what the path may not
+	// take away.
+	rest := ansi.StringWidth(m.statusAt(2, 0))
+	return m.statusAt(2, max(8, width-rest))
+}
+
+// statusAt renders the status line at a squeeze level: 0 is the full
+// line, 1 drops the label of the progress bar, 2 drops the bar. pathW
+// limits the width of the path, -1 leaves it alone.
+func (m Model) statusAt(level, pathW int) string {
 	f := m.files[m.fileIdx]
 	added, deleted := f.Stats()
 	path := f.Path
 	if f.OldPath != "" {
 		path = f.OldPath + " → " + f.Path
 	}
-	parts := []string{
+	if pathW >= 0 {
+		path = shortenPath(path, pathW, f.OldPath != "")
+	}
+	head := []string{
 		path,
 		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
 		fmt.Sprintf("+%d −%d", added, deleted),
 	}
 	if m.opts.Round > 0 {
-		parts = append(parts, fmt.Sprintf("Runde %d", m.opts.Round))
+		head = append(head, fmt.Sprintf("Runde %d", m.opts.Round))
 	}
 	if m.interdiff {
-		parts = append(parts, "[interdiff]")
+		head = append(head, "[interdiff]")
 	}
-	if len(m.state.Comments()) > 0 {
-		parts = append(parts, m.commentCount())
+	// The gradient head is followed by the review progress and the
+	// comment badges, which carry their own colours, and the plain
+	// rest of the markers.
+	out := []string{m.statusGradient(strings.Join(head, "  "))}
+	if p := m.progressBar(level == 0); p != "" && level < 2 {
+		out = append(out, p)
 	}
+	if b := m.commentBadges(); b != "" {
+		out = append(out, b)
+	}
+	var tail []string
 	if n := m.orphanCount(); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d verwaist", n))
+		tail = append(tail, fmt.Sprintf("%d verwaist", n))
 	}
 	if m.unified {
-		parts = append(parts, "[unified]")
+		tail = append(tail, "[unified]")
 	}
 	if m.wrap {
-		parts = append(parts, "[wrap]")
+		tail = append(tail, "[wrap]")
 	}
 	if m.ignoreWS {
-		parts = append(parts, "[ignorews]")
+		tail = append(tail, "[ignorews]")
 	}
 	if m.visual {
-		parts = append(parts, "-- VISUAL --")
+		tail = append(tail, "-- VISUAL --")
 	}
 	if typed := m.keys.Typed(); typed != "" {
-		parts = append(parts, typed)
+		tail = append(tail, typed)
 	}
 	if hint := m.changeHint(); hint != "" {
-		parts = append(parts, hint)
+		tail = append(tail, hint)
 	}
-	return m.statusGradient(strings.Join(parts, "  "))
+	if len(tail) > 0 {
+		out = append(out, m.theme.Styles.Status.Render(strings.Join(tail, "  ")))
+	}
+	return strings.Join(out, m.theme.Styles.Status.Render("  "))
 }
 
 // statusGradient colours the status line text with a gradient from the
@@ -1513,4 +1546,25 @@ func lineNum(n int) string {
 		return ""
 	}
 	return fmt.Sprint(n)
+}
+
+// shortenPath cuts a path to w cells in the middle, keeping the file
+// name: "internal/ui/window.go" becomes "internal/…/window.go". A
+// rename is cut at the end, because it has two names.
+func shortenPath(path string, w int, rename bool) string {
+	if ansi.StringWidth(path) <= w {
+		return path
+	}
+	if rename || w < 4 {
+		return ansi.Truncate(path, w, "…")
+	}
+	base := path
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		base = path[i+1:]
+	}
+	avail := w - ansi.StringWidth(base) - 2 // "…/"
+	if avail < 1 {
+		return "…" + ansi.TruncateLeft(base, ansi.StringWidth(base)-(w-1), "")
+	}
+	return ansi.Truncate(path, avail, "") + "…/" + base
 }

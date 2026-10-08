@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
 )
 
@@ -203,4 +205,96 @@ func reverse(s []color.Color) []color.Color {
 		r[len(s)-1-i] = c
 	}
 	return r
+}
+
+// progressCells is the width of the review progress bar.
+const progressCells = 6
+
+// readCount is the number of files of the review marked as read.
+func (m Model) readCount() int {
+	n := 0
+	for _, f := range m.files {
+		if m.state.Read(f.Path) {
+			n++
+		}
+	}
+	return n
+}
+
+// progressBar is the review progress (label: with the word "gelesen") of the status line: a bar of the
+// files marked as read, its fill running from cyan to green, and the
+// count. A finished review turns the whole bar green and says so. A
+// review of one file has no progress to show.
+func (m Model) progressBar(label bool) string {
+	total := len(m.files)
+	if total < 2 {
+		return ""
+	}
+	st := m.theme.Styles
+	read := m.readCount()
+	fill := (read*progressCells + total/2) / total
+	if read > 0 {
+		fill = max(fill, 1)
+	}
+	done := read == total
+	ramp := lipgloss.Blend1D(progressCells, st.CommentNit.GetForeground(), st.Added.GetForeground())
+	var b strings.Builder
+	for i := range progressCells {
+		switch {
+		case done:
+			b.WriteString(st.Added.Render("▰"))
+		case i < fill:
+			b.WriteString(lipgloss.NewStyle().Foreground(ramp[i]).Render("▰"))
+		default:
+			b.WriteString(st.Fold.Render("▱"))
+		}
+	}
+	text := fmt.Sprintf(" %d/%d", read, total)
+	if label {
+		text += " gelesen"
+	}
+	if done {
+		return b.String() + st.Added.Render(text+" ✓")
+	}
+	return b.String() + st.Status.Render(text)
+}
+
+// commentBadges are the open comments of the review as one badge per
+// category in the category colour; an open must comment is a reversed
+// pill, so it cannot be overlooked. With only resolved comments the
+// plain count remains.
+func (m Model) commentBadges() string {
+	all := m.state.Comments()
+	if len(all) == 0 {
+		return ""
+	}
+	n := map[review.Category]int{}
+	for _, c := range m.state.OpenComments() {
+		n[c.Category]++
+	}
+	st := m.theme.Styles
+	cats := []struct {
+		cat   review.Category
+		style lipgloss.Style
+	}{
+		{review.Must, st.CommentMust},
+		{review.Should, st.CommentShould},
+		{review.Nit, st.CommentNit},
+		{review.Question, st.CommentQuestion},
+	}
+	var badges []string
+	for _, c := range cats {
+		if n[c.cat] == 0 {
+			continue
+		}
+		if c.cat == review.Must {
+			badges = append(badges, c.style.Bold(true).Reverse(true).Render(fmt.Sprintf(" %d %s ", n[c.cat], c.cat)))
+			continue
+		}
+		badges = append(badges, c.style.Render(fmt.Sprintf("● %d %s", n[c.cat], c.cat)))
+	}
+	if len(badges) == 0 {
+		return st.Status.Render(m.commentCount())
+	}
+	return strings.Join(badges, " ")
 }

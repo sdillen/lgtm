@@ -137,6 +137,6 @@ func TestFileJumpsAreNotAnimated(t *testing.T) {
 	assertScreen(t, m, []string{
 		"   1      - x",
 		"        1 + X",
-		"small.txt  2/2  +1 −1",
+		"small.txt  2/2  +1 −1  ▰▰▰▱▱▱ 1/2",
 	})
 }

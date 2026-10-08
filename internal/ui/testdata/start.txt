@@ -15,4 +15,4 @@
 
 
 
-internal/ui/window.go  1/2  +2 −1  Runde 3
+internal/ui/window.go  1/2  +2 −1  Runde 3  ▰▰▰▱▱▱ 1/2
