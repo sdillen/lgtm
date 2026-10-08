@@ -158,6 +158,8 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 96. Als Nutzer möchte ich `lgtm` per `go install` installieren, damit es ohne weitere Abhängigkeiten (kein cgo, kein git-Binary) läuft.
 97. Als Nix-Nutzer möchte ich `lgtm` als Nix-Paket bauen, damit es in meine Umgebung passt.
 98. Als Nutzer möchte ich `lgtm --version` aufrufen, damit ich weiß, welche Version ich nutze.
+99. Als Nutzer möchte ich `lgtm --help` aufrufen, damit ich Aufruf, Flags und Exit-Codes nachschlagen kann.
+100. Als Nutzer oder Agenten-Workflow möchte ich mit `lgtm clear` den Zustand des aktuellen Reviews (`.lgtm/` und die Snapshot-Refs unter `refs/lgtm/`) löschen, damit ich neu beginnen kann; `clear` fragt nach, ohne Terminal ist `--yes` nötig.
 
 ## Implementierungsentscheidungen
 
@@ -182,7 +184,7 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 - **theme** – lädt eingebaute und eigene Themes, erkennt Hell/Dunkel, bildet semantische Tokens und Chroma-Stile auf Lip-Gloss-Styles ab.
 - **keymap** – Präfix-Trie der Bindings inklusive Leader, Counts und Config-Overrides. Aus derselben Struktur entstehen Dispatch, which-key-Popup und `?`-Hilfe.
 - **ui** – Bubble-Tea-Modelle für Startscreen, Datei-Ansicht, Drawer, Picker, Kommentar-Float, which-key, Kommandozeile und Statuszeile. Die UI bekommt fertige `ReviewFile`-Modelle und ruft nur Domänen-Methoden auf; sie enthält keine Git- oder Diff-Logik. Highlighting erfolgt lazy für den sichtbaren Bereich plus Puffer.
-- **cmd** – CLI-Einstieg, Flags, Argument-Parsing, Exit-Codes, Versionsinfo.
+- **cmd** – CLI-Einstieg, Flags, Argument-Parsing, `--help`, Subcommand `clear`, Exit-Codes, Versionsinfo.
 
 ### Verträge und Formate
 
