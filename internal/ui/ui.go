@@ -1550,7 +1550,10 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 	// numbers and marker) is fixed per line, so an approximation is
 	// as unique as the exact width.
 	skip, need := m.bodyWindow(12)
-	key := lineKey{idx: idx, cursor: cursor, mark: mark, skip: skip, need: need, seg0: &segs[0], words: len(l.Words)}
+	key := lineKey{idx: idx, cursor: cursor, mark: mark, skip: skip, need: need, seg0: &segs[0]}
+	if len(l.Words) > 0 {
+		key.word0 = &l.Words[0]
+	}
 	if out, ok := m.hl.cachedLine(key, l); ok {
 		return out
 	}

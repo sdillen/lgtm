@@ -48,14 +48,15 @@ const maxRendered = 8192
 // lineKey is everything a rendered diff line depends on besides the
 // file and the theme: the line, the cursor state, the horizontal window
 // and the identity of the highlighted segments, which changes when the
-// lazy highlighter has caught up with the line.
+// lazy highlighter has caught up with the line, and of the word diff,
+// which changes with every new diff of the file.
 type lineKey struct {
 	idx        int
 	cursor     bool
 	mark       int
 	skip, need int
 	seg0       *theme.Segment
-	words      int
+	word0      *diff.Word
 }
 
 // renderedLine is a cached line; text and kind guard against a file
