@@ -23,7 +23,7 @@ import (
 //	bg = "#1a1b26"      # background (reserved for future views)
 //	dim = "#51597d"     # gutters, fold markers, hunk headers
 //	accent = "#7aa2f7"  # status line
-//	cursor = "#2b2f41"  # cursor row background
+//	cursor = "#364a82"  # cursor row background
 //	border = "#3b4261"  # overlay borders (reserved for future views)
 //
 //	[diff]
@@ -214,7 +214,7 @@ func builtinSpec(kind Kind) Spec {
 				BG:     "#e1e2e7",
 				Dim:    "#848cb5",
 				Accent: "#2e7de9",
-				Cursor: "#d3d6e5",
+				Cursor: "#b7c1e3",
 				Border: "#b7c1e3",
 			},
 			Diff: DiffSpec{
@@ -241,7 +241,7 @@ func builtinSpec(kind Kind) Spec {
 			BG:     "#1a1b26",
 			Dim:    "#51597d",
 			Accent: "#7aa2f7",
-			Cursor: "#2b2f41",
+			Cursor: "#364a82",
 			Border: "#3b4261",
 		},
 		Diff: DiffSpec{

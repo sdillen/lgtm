@@ -88,7 +88,7 @@ func TestDefaultDarkThemeIsTokyoNightNight(t *testing.T) {
 		col  color.Color
 		want string // expected rgb triplet
 	}{
-		{"cursor", th.Styles.Cursor, "43;47;65"},                 // #2b2f41
+		{"cursor", th.Styles.Cursor, "54;74;130"},                // #364a82
 		{"added_bg", th.Styles.AddedBG, "31;44;56"},              // #1f2c38
 		{"deleted_bg", th.Styles.DeletedBG, "52;33;43"},          // #34212b
 		{"word_added_bg", th.Styles.WordAddedBG, "65;86;42"},     // #41562a
