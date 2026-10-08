@@ -16,7 +16,7 @@ var longLine = diff.New("long.txt", "", strings.Repeat("x", 60)+"\n")
 // Zeilen standardmäßig nicht umbrechen": the line is cut at the window
 // edge and does not fill the rows below.
 func TestLongLinesDoNotWrapByDefault(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{longLine}, "main", themeFor, ui.Options{}), 20, 2)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{longLine}, "main", themeFor, ui.Options{}), 20, 2)
 
 	assertScreen(t, m, []string{
 		"        1 + xxxxxxxx", // gutter 9 + marker 3 + 8 cells = 20
@@ -29,7 +29,7 @@ func TestLongLinesDoNotWrapByDefault(t *testing.T) {
 // scrolls back.
 func TestZLAndZHScrollHorizontally(t *testing.T) {
 	line := diff.New("long.txt", "", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n")
-	m := start(ui.New([]diff.ReviewFile{line}, "main", themeFor, ui.Options{}), 20, 2)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{line}, "main", themeFor, ui.Options{}), 20, 2)
 
 	got := screen(m)
 	if !strings.Contains(got, "abcdefgh") {
@@ -52,7 +52,7 @@ func TestZLAndZHScrollHorizontally(t *testing.T) {
 // schaltet Softwrap ein": with wrap the long line fills the rows below
 // instead of being cut.
 func TestSetWrapWrapsLongLines(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{longLine}, "main", themeFor, ui.Options{}), 40, 4)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{longLine}, "main", themeFor, ui.Options{}), 40, 4)
 
 	m, _ = enter(typeText(press(m, ":"), "set wrap"))
 	assertScreen(t, m, []string{

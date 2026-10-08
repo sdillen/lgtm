@@ -62,6 +62,7 @@ var commands = []struct{ usage, desc string }{
 	{":theme [name]", "switch the theme, or show the current one"},
 	{":set [no]unified", "set an option (name! toggles, name? shows)"},
 	{":set [no]sidebar", "keep the file tree visible"},
+	{":set [no]minimap", "show the minimap strip"},
 }
 
 // helpLines are all lines of the full help: every action with all its

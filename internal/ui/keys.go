@@ -37,6 +37,7 @@ const (
 	actJumpBack       keymap.Action = "jump-back"
 	actJumpForward    keymap.Action = "jump-forward"
 	actUnified        keymap.Action = "toggle-unified"
+	actMinimap        keymap.Action = "toggle-minimap"
 	actDrawer         keymap.Action = "toggle-file-drawer"
 	actPicker         keymap.Action = "pick-file"
 	actPickFileAll    keymap.Action = "pick-any-file"
@@ -99,6 +100,7 @@ var bindings = []keymap.Binding{
 	{Action: actPickFileAll, Keys: []string{"<leader>f"}, Desc: "pick any file of the repo"},
 	{Action: actToggleRead, Keys: []string{"<leader>r"}, Desc: "toggle read status"},
 	{Action: actInterdiff, Keys: []string{"<leader>i"}, Desc: "toggle interdiff since the last round"},
+	{Action: actMinimap, Keys: []string{"m"}, Desc: "toggle minimap"},
 	{Action: actVisual, Keys: []string{"V"}, Desc: "select lines"},
 	{Action: actComment, Keys: []string{"c"}, Desc: "comment the line or selection (edit on a comment)"},
 	{Action: actCommentFile, Keys: []string{"C"}, Desc: "comment the whole file"},

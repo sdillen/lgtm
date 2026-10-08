@@ -9,10 +9,11 @@ import (
 )
 
 // minimapOn reports whether the minimap strip is shown: one column at
-// the right edge of the file area, once the terminal is wide enough
-// that the column does not cramp the code.
+// the right edge of the file area, whenever the user wants it. Only a
+// terminal too narrow to hold the column next to a code column hides
+// it regardless.
 func (m Model) minimapOn() bool {
-	return m.width >= 60 && m.contentWidth() >= 12
+	return m.minimap && m.contentWidth() >= 2
 }
 
 // minimapStrip is the minimap strip: one cell per row of the file

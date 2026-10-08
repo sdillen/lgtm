@@ -93,6 +93,32 @@ func TestMinimapShowsThePosition(t *testing.T) {
 	}
 }
 
+// TestMinimapToggle pins that m hides and shows the strip, and that
+// :set [no]minimap does the same.
+func TestMinimapToggle(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{minimapFile}, "main", themeFor, ui.Options{}), 80, 11)
+	m = press(m, "z", "R")
+	const cursorBG = "48;2;54;74;130"
+
+	if !endsWithCell(m.View().Content, "ine 001", cursorBG) {
+		t.Fatalf("minimap is not shown by default:\n%s", screen(m))
+	}
+	m = press(m, "m")
+	if endsWithCell(m.View().Content, "ine 001", cursorBG) {
+		t.Errorf("m did not hide the minimap:\n%s", screen(m))
+	}
+	m = press(m, "m")
+	if !endsWithCell(m.View().Content, "ine 001", cursorBG) {
+		t.Errorf("m did not show the minimap again:\n%s", screen(m))
+	}
+
+	m = typeText(press(m, ":"), "set nominimap")
+	m = press(m, "enter")
+	if endsWithCell(m.View().Content, "ine 001", cursorBG) {
+		t.Errorf(":set nominimap did not hide the minimap:\n%s", screen(m))
+	}
+}
+
 // endsWithCell reports whether the screen row containing needle ends
 // with a cell of the given truecolour background, the strip cell of
 // that row.

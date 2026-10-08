@@ -403,7 +403,7 @@ func star8() diff.ReviewFile {
 // scrolls the view horizontally, h scrolls back.
 func TestLeftRightMoveTheColumnAndScrollHorizontally(t *testing.T) {
 	long := diff.New("long.txt", "", "0123456789abcdefghij\nsecond\n")
-	m := start(ui.New([]diff.ReviewFile{long}, "main", themeFor, ui.Options{}), 16, 4)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{long}, "main", themeFor, ui.Options{}), 16, 4)
 
 	first := strings.Split(screen(m), "\n")[0]
 	if !strings.HasPrefix(first, "        1 + 0123") {

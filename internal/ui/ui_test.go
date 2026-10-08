@@ -242,7 +242,7 @@ func TestLongLinesAreCutAtTheTerminalWidth(t *testing.T) {
 	long := diff.ReviewFile{Path: "long.txt", Lines: []diff.Line{
 		{Kind: diff.Added, New: 1, Text: "0123456789abcdef"},
 	}}
-	m := start(ui.New([]diff.ReviewFile{long}, "main", themeFor, ui.Options{}), 20, 2)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{long}, "main", themeFor, ui.Options{}), 20, 2)
 
 	assertScreen(t, m, []string{
 		"        1 + 01234567",
@@ -711,6 +711,12 @@ func start(m tea.Model, width, height int) tea.Model {
 	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return m
+}
+
+// startNoMinimap is start with the minimap switched off, for tests that
+// assert the full terminal width of the code.
+func startNoMinimap(m tea.Model, width, height int) tea.Model {
+	return press(start(m, width, height), "m")
 }
 
 func press(m tea.Model, keys ...string) tea.Model {

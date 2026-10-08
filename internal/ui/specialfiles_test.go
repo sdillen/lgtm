@@ -138,7 +138,7 @@ func TestDeletedFileCollapsesWithZMAndOpensWithZR(t *testing.T) {
 // expands like a deleted file.
 func TestGeneratedFileIsCollapsed(t *testing.T) {
 	gen := diff.NewWithAttrs("vendor/lib.go", "b\n", "B\n", func(string) bool { return true })
-	m := start(ui.New([]diff.ReviewFile{gen}, "main", themeFor, ui.Options{}), 30, 2)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{gen}, "main", themeFor, ui.Options{}), 30, 2)
 
 	assertScreen(t, m, []string{
 		"⋯ generierte Datei: 2 Zeilen ⋯",
@@ -171,7 +171,7 @@ func TestFoldKeysDoNotCollapseRegularFiles(t *testing.T) {
 // keeps the wash.
 func TestNewFileHasNoBackgroundWash(t *testing.T) {
 	added := diff.New("new.go", "", "package main\n")
-	m := start(ui.New([]diff.ReviewFile{added}, "main", themeFor, ui.Options{}), 30, 5)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{added}, "main", themeFor, ui.Options{}), 30, 5)
 
 	// #1f2c38 is the added wash of the night theme: the ANSI background
 	// sequence must not appear in a new file.
@@ -180,7 +180,7 @@ func TestNewFileHasNoBackgroundWash(t *testing.T) {
 	}
 
 	changed := diff.New("f.go", "package main\n", "package main2\n")
-	m = start(ui.New([]diff.ReviewFile{changed}, "main", themeFor, ui.Options{}), 30, 5)
+	m = startNoMinimap(ui.New([]diff.ReviewFile{changed}, "main", themeFor, ui.Options{}), 30, 5)
 	if !strings.Contains(m.View().Content, "48;2;31;44;56") {
 		t.Errorf("changed file lost the added background wash:\n%s", m.View().Content)
 	}

@@ -183,6 +183,7 @@ type Model struct {
 	// remembers per file whether its whole content is collapsed (deleted
 	// and generated files start collapsed).
 	wrap          bool
+	minimap       bool // the minimap strip is wanted; minimapOn also needs room
 	ignoreWS      bool
 	fileCollapsed []bool
 
@@ -322,6 +323,7 @@ func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Mo
 		state:       opts.State,
 		dir:         opts.Dir,
 		rowsCache:   &rowsCache{},
+		minimap:     true,
 		startScreen: opts.StartScreen,
 	}
 	m.full = files
@@ -694,6 +696,8 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		}
 	case actUnified:
 		m.setUnified(!m.unified)
+	case actMinimap:
+		m.minimap = !m.minimap
 	case actVisual:
 		m.toggleVisual()
 	case actComment:

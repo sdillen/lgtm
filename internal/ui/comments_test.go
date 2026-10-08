@@ -494,7 +494,7 @@ func floatTitle(m tea.Model) string {
 // TestLongCommentsWrapInline pins that the inline comment rows wrap at
 // the view width instead of cutting the text off.
 func TestLongCommentsWrapInline(t *testing.T) {
-	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 10)
+	m := startNoMinimap(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 10)
 
 	m = typeText(press(m, "c"), "one two three four five six seven")
 	m = pressMsg(m, ctrl("s"))

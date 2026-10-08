@@ -140,6 +140,17 @@ func (m *Model) set(args []string) {
 			case "query":
 				report = append(report, m.optionState("sidebar"))
 			}
+		case "minimap":
+			switch op {
+			case "on":
+				m.minimap = true
+			case "off":
+				m.minimap = false
+			case "toggle":
+				m.minimap = !m.minimap
+			case "query":
+				report = append(report, m.optionState("minimap"))
+			}
 		case "wrap":
 			switch op {
 			case "on":
@@ -200,6 +211,8 @@ func (m Model) optionState(name string) string {
 		on = m.unified
 	case "sidebar":
 		on = m.sidebar
+	case "minimap":
+		on = m.minimap
 	case "wrap":
 		on = m.wrap
 	case "ignorews":
