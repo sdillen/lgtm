@@ -56,8 +56,14 @@ func enter(m tea.Model) (tea.Model, tea.Cmd) {
 	return m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 }
 
+// The cursor row is padded to the full width with its background, so
+// trailing blanks are not part of what a test compares.
 func screen(m tea.Model) string {
-	return withoutRule(ansi.Strip(m.View().Content))
+	lines := strings.Split(withoutRule(ansi.Strip(m.View().Content)), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // withoutRule drops the rule above the status line from a stripped

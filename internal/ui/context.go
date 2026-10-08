@@ -565,14 +565,14 @@ func (m Model) contextView() string {
 	}
 	var b strings.Builder
 	if m.wrap {
-		m.renderWrapped(&b, width, len(m.context.lines), func(j int) string {
-			return m.renderContextLine(j, j == m.cursor)
+		m.renderWrapped(&b, width, len(m.context.lines), func(j int) (string, bool) {
+			return m.renderContextLine(j, j == m.cursor), j == m.cursor
 		}, strip)
 	} else {
 		for i := range m.bodyHeight() {
 			if j := m.offset + i; j < len(m.context.lines) {
-				row := ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, "")
-				b.WriteString(ansi.Truncate(row, width, ""))
+				row := ansi.Truncate(ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, ""), width, "")
+				b.WriteString(m.padCursor(row, width, j == m.cursor))
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
@@ -607,11 +607,14 @@ func (m Model) renderContextLine(idx int, cursor bool) string {
 	st := m.theme.Styles
 	gutter := st.Gutter
 	if cursor {
-		gutter = gutter.Background(st.Cursor)
+		gutter = gutter.Background(st.Cursor).Foreground(st.Status.GetForeground()).Bold(true)
 	}
 	segs := m.context.hl.newLine(idx + 1)
 	if len(segs) == 0 && m.context.lines[idx] != "" {
 		segs = []theme.Segment{{Text: strings.ReplaceAll(m.context.lines[idx], "\t", "    ")}}
+	}
+	if cursor && idx == m.cursor {
+		segs = colSegments(segs, m.context.lines[idx], m.col)
 	}
 	num := fmt.Sprintf("%4d ", idx+1)
 	var b strings.Builder

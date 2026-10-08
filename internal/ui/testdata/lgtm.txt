@@ -1,4 +1,4 @@
-   1    1   package main 
+   1    1   package main
    2      - old     ╭─────────────────╮
         2 + new     │                 │
    3    3   end     │ ✓ LGTM          │

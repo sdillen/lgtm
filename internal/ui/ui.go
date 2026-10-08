@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -1133,18 +1134,18 @@ func (m Model) fileView() string {
 		width--
 	}
 	if m.wrap {
-		m.renderWrapped(&b, width, len(rows), func(j int) string {
+		m.renderWrapped(&b, width, len(rows), func(j int) (string, bool) {
 			r := rows[j]
 			hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
-			return m.renderRow(r, hl)
+			return m.renderRow(r, hl), hl
 		}, strip)
 	} else {
 		for i := range m.bodyHeight() {
 			if j := m.offset + i; j < len(rows) {
 				r := rows[j]
 				hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
-				row := ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, "")
-				b.WriteString(ansi.Truncate(row, width, ""))
+				row := ansi.Truncate(ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, ""), width, "")
+				b.WriteString(m.padCursor(row, width, hl))
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
@@ -1182,6 +1183,20 @@ func (m Model) fileView() string {
 	return out.String()
 }
 
+// padCursor fills a highlighted row up to width with the cursor
+// background, so the cursor reads as a bar and stays visible on short
+// and empty lines.
+func (m Model) padCursor(row string, width int, hl bool) string {
+	if !hl {
+		return row
+	}
+	pad := width - ansi.StringWidth(row)
+	if pad <= 0 {
+		return row
+	}
+	return row + lipgloss.NewStyle().Background(m.theme.Styles.Cursor).Render(strings.Repeat(" ", pad))
+}
+
 // wrapLimit is how many cells of one line are rendered with wrap on: a
 // screen height. Longer lines are cut with "…", so minified or
 // generated content cannot flood the view.
@@ -1197,10 +1212,10 @@ func (m Model) wrapLimit() int {
 // cells and continues on the next line. A row longer than the wrap
 // limit is cut with "…". cells are the minimap strip cells of the
 // screen rows, nil without the strip.
-func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(int) string, cells []string) {
+func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(int) (string, bool), cells []string) {
 	out := 0
 	for j := m.offset; j < rows && out < m.bodyHeight(); j++ {
-		text := render(j)
+		text, hl := render(j)
 		if ansi.StringWidth(text) > m.wrapLimit() {
 			text = ansi.Truncate(text, m.wrapLimit(), "") + "…"
 		}
@@ -1208,7 +1223,7 @@ func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(in
 			if out >= m.bodyHeight() {
 				break
 			}
-			b.WriteString(piece)
+			b.WriteString(m.padCursor(piece, width, hl))
 			if cells != nil {
 				b.WriteString(m.minimapCell(cells, out))
 			}
@@ -1413,7 +1428,7 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 	st := m.theme.Styles
 	gutter := st.Gutter
 	if cursor {
-		gutter = gutter.Background(st.Cursor)
+		gutter = gutter.Background(st.Cursor).Foreground(st.Status.GetForeground()).Bold(true)
 	}
 
 	marker, markerStyle, wash := "   ", lipgloss.Style{}, color.Color(nil)
@@ -1446,6 +1461,10 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 		segs = wordSegments(segs, l.Text, l.Words, bg)
 	}
 
+	if cursor && idx == m.cursorViewLine() && m.rows()[m.cursor].line == idx {
+		segs = colSegments(segs, l.Text, m.col)
+	}
+
 	num := fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))
 	var b strings.Builder
 	m.renderBody(&b, segs, len(num)+len(marker), cursor)
@@ -1469,7 +1488,7 @@ func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells 
 		need = m.wrapLimit()
 	}
 	end := skip + need
-	acc := 0
+	acc, padded := 0, false
 	for _, s := range segs {
 		w := ansi.StringWidth(s.Text)
 		if acc+w <= skip {
@@ -1479,6 +1498,12 @@ func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells 
 		if acc >= end {
 			break
 		}
+		if acc > 0 && !padded {
+			// Stand in for the skipped segments, so the cut at
+			// the scroll offset lands on the right cell.
+			b.WriteString(strings.Repeat(" ", acc))
+		}
+		padded = true
 		style := s.Style
 		if cursor {
 			style = style.Background(m.theme.Styles.Cursor)
@@ -1500,6 +1525,39 @@ func washSegments(segs []theme.Segment, wash color.Color) []theme.Segment {
 		washed[i] = theme.Segment{Text: s.Text, Style: s.Style.Background(wash)}
 	}
 	return washed
+}
+
+// colSegments marks the character at byte offset col of raw with reverse
+// video: the column cursor that go-to-definition and the word searches
+// work from. At the end of the line, or on an empty line, a blank cell
+// carries the mark. The segments carry the tab-expanded text, so col is
+// translated to the expanded offset first.
+func colSegments(segs []theme.Segment, raw string, col int) []theme.Segment {
+	col = min(max(col, 0), len(raw))
+	pos := col + 3*strings.Count(raw[:col], "\t")
+	out := make([]theme.Segment, 0, len(segs)+2)
+	done := false
+	for _, s := range segs {
+		if done || pos >= len(s.Text) {
+			pos -= len(s.Text)
+			out = append(out, s)
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s.Text[pos:])
+		out = append(out,
+			theme.Segment{Text: s.Text[:pos], Style: s.Style},
+			theme.Segment{Text: s.Text[pos : pos+size], Style: s.Style.Reverse(true)},
+			theme.Segment{Text: s.Text[pos+size:], Style: s.Style})
+		done = true
+	}
+	if !done {
+		var style lipgloss.Style
+		if len(segs) > 0 {
+			style = segs[len(segs)-1].Style
+		}
+		out = append(out, theme.Segment{Text: " ", Style: style.Reverse(true)})
+	}
+	return out
 }
 
 // wordSegments splits the syntax segments of a line at the intra-line word
