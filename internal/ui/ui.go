@@ -148,6 +148,10 @@ type Model struct {
 	tree         []treeRow
 	drawerCursor int
 	sidebar      bool // the permanent sidebar is shown
+	// sidebarW is sidebarWidth for one frame, 0 when unknown. View sets
+	// it on its own copy of the model: every row asks for the content
+	// width, and measuring the tree each time cost a third of a frame.
+	sidebarW int
 
 	// pickerQuery is the fuzzy query, pickerMatches the matching file
 	// indexes and pickerSel the selected match. pickerAll tells whether
@@ -1122,6 +1126,9 @@ func (m Model) foldOfLine(line int) int {
 }
 
 func (m Model) View() tea.View {
+	if m.sidebar {
+		m.sidebarW = m.sidebarWidth()
+	}
 	var content string
 	switch {
 	case m.context != nil:

@@ -149,6 +149,9 @@ func (m Model) cutTree(lines []string) []string {
 // sidebarWidth is the width of the permanent sidebar: the widest tree
 // line plus the box chrome, capped so the file view keeps room.
 func (m Model) sidebarWidth() int {
+	if m.sidebarW > 0 {
+		return m.sidebarW
+	}
 	inner := 0
 	for _, l := range m.treeLines(-1) {
 		inner = max(inner, ansi.StringWidth(l))
