@@ -128,10 +128,6 @@ type Model struct {
 	foldsOpen []bool // per fold of the current file: open?
 	unified   bool   // show the classic unified diff instead of the full file
 
-	// added caches Added() of the current file for one frame; fileView
-	// sets it on its own copy of the model.
-	addedKnown, added bool
-
 	mode       mode
 	keys       keymap.Dispatcher // the key sequence typed so far
 	keyGen     int               // counts key presses, to drop stale which-key timers
@@ -280,17 +276,39 @@ type Model struct {
 	shimmer int
 }
 
-// rowsCache is the cached row list of rows().
+// rowsCache is the cached row list of rows(), plus what the frame
+// derives from the current file and its rows: each of them walks the
+// whole file, so they are computed once, not once per frame.
 type rowsCache struct {
 	rows []row
+
+	statsKnown     bool
+	added, deleted int // Stats() of the current file
+	newKnown       bool
+	isNew          bool  // Added() of the current file
+	marked         []int // minimapMarked of rows, for the strip height
+	frameLen       int   // bytes of the last frame of fileView
 }
 
 // invalidateRows drops the cached row list; call it whenever the file
 // view state changes: files, mode, folds, comments.
 func (m *Model) invalidateRows() {
 	if m.rowsCache != nil {
-		m.rowsCache.rows = nil
+		*m.rowsCache = rowsCache{}
 	}
+}
+
+// fileStats is Stats() of the current file, from the row cache.
+func (m Model) fileStats() (added, deleted int) {
+	c := m.rowsCache
+	if c == nil {
+		return m.files[m.fileIdx].Stats()
+	}
+	if !c.statsKnown {
+		c.added, c.deleted = m.files[m.fileIdx].Stats()
+		c.statsKnown = true
+	}
+	return c.added, c.deleted
 }
 
 // whichKeyMsg fires when a prefix has waited long enough for which-key.
@@ -1148,11 +1166,15 @@ func (m Model) emptyView() string {
 func (m Model) fileView() string {
 	width := m.contentWidth()
 	var b strings.Builder
+	// Frames of one file are about the same size; growing to the last
+	// one spares the builder its doubling copies.
+	if m.rowsCache != nil {
+		b.Grow(m.rowsCache.frameLen)
+	}
 	rows := m.rows()
 	m.hl.ensureRows(rows, m.offset-highlightBuffer, m.offset+m.bodyHeight()+highlightBuffer)
-	// Scanning the file for "new" once per frame, not once per row.
-	m.addedKnown, m.added = true, m.files[m.fileIdx].Added()
-	strip := m.minimapStrip(len(rows), m.minimapMarks(rows))
+	marks := m.minimapMarks(rows)
+	strip := m.minimapStrip(len(rows), m.cachedMinimapMarked(len(rows), marks), marks)
 	if m.minimapOn() {
 		width--
 	}
@@ -1168,9 +1190,9 @@ func (m Model) fileView() string {
 				r := rows[j]
 				hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
 				row := ansi.Truncate(ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, ""), width, "")
-				b.WriteString(m.padCursor(row, width, hl))
+				m.writePadded(&b, row, width, hl)
 			} else {
-				b.WriteString(m.padCursor("", width, false))
+				m.writePadded(&b, "", width, false)
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
@@ -1182,6 +1204,9 @@ func (m Model) fileView() string {
 	}
 	b.WriteString(m.footerRule())
 	b.WriteString(ansi.Truncate(bottom, width, ""))
+	if m.rowsCache != nil {
+		m.rowsCache.frameLen = b.Len()
+	}
 	if !m.sidebar {
 		return b.String()
 	}
@@ -1208,23 +1233,27 @@ func (m Model) fileView() string {
 	return out.String()
 }
 
-// padCursor fills a highlighted row up to width with the cursor
-// background, so the cursor reads as a bar and stays visible on short
-// and empty lines. With the minimap on every row is filled up to width,
+// writePadded writes the row and fills a highlighted row up to width
+// with the cursor background, so the cursor reads as a bar and stays
+// visible on short and empty lines. With the minimap on every row is filled up to width,
 // with plain spaces when it is not highlighted, so the strip cell
 // behind it sits in the last column.
-func (m Model) padCursor(row string, width int, hl bool) string {
+func (m Model) writePadded(b *strings.Builder, row string, width int, hl bool) {
+	b.WriteString(row)
 	if !hl && !m.minimapOn() {
-		return row
+		return
 	}
 	pad := width - ansi.StringWidth(row)
 	if pad <= 0 {
-		return row
+		return
 	}
-	if !hl {
-		return row + strings.Repeat(" ", pad)
+	if hl {
+		b.WriteString(lipgloss.NewStyle().Background(m.theme.Styles.Cursor).Render(strings.Repeat(" ", pad)))
+		return
 	}
-	return row + lipgloss.NewStyle().Background(m.theme.Styles.Cursor).Render(strings.Repeat(" ", pad))
+	for range pad {
+		b.WriteByte(' ')
+	}
 }
 
 // wrapLimit is how many cells of one line are rendered with wrap on: a
@@ -1253,7 +1282,7 @@ func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(in
 			if out >= m.bodyHeight() {
 				break
 			}
-			b.WriteString(m.padCursor(piece, width, hl))
+			m.writePadded(b, piece, width, hl)
 			if cells != nil {
 				b.WriteString(m.minimapCell(cells, out))
 			}
@@ -1264,7 +1293,7 @@ func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(in
 	// The strip runs down the whole file area, also beside the empty
 	// rows below the last line.
 	for ; cells != nil && m.minimapOn() && out < m.bodyHeight(); out++ {
-		b.WriteString(m.padCursor("", width, false))
+		m.writePadded(b, "", width, false)
 		b.WriteString(m.minimapCell(cells, out))
 		b.WriteByte('\n')
 	}
@@ -1303,7 +1332,7 @@ func (m Model) statusLine(width int) string {
 // the bar. pathW limits the width of the path, -1 leaves it alone.
 func (m Model) statusAt(level, pathW int) string {
 	f := m.files[m.fileIdx]
-	added, deleted := f.Stats()
+	added, deleted := m.fileStats()
 	path := f.Path
 	if f.OldPath != "" {
 		path = f.OldPath + " → " + f.Path
@@ -1519,13 +1548,18 @@ func (m Model) footerRule() string {
 	return m.theme.Styles.Gutter.Render(strings.Repeat("─", max(0, m.width))) + "\n"
 }
 
-// fileAdded reports whether the current file is new, from the per-frame
-// cache when fileView has set it.
+// fileAdded reports whether the current file is new, from the row
+// cache: renderLine asks once per row.
 func (m Model) fileAdded() bool {
-	if m.addedKnown {
-		return m.added
+	c := m.rowsCache
+	if c == nil {
+		return m.files[m.fileIdx].Added()
 	}
-	return m.files[m.fileIdx].Added()
+	if !c.newKnown {
+		c.isNew = m.files[m.fileIdx].Added()
+		c.newKnown = true
+	}
+	return c.isNew
 }
 
 // renderLine renders one line of the current file: gutter, marker and the

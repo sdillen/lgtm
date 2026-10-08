@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"strings"
 	"unicode/utf8"
 
@@ -578,7 +577,7 @@ func (m Model) viewRows() int {
 func (m Model) contextView() string {
 	width := m.contentWidth()
 	m.context.hl.ensureNew(m.offset + m.bodyHeight() + highlightBuffer)
-	strip := m.minimapStrip(len(m.context.lines), func(int) color.Color { return nil })
+	strip := m.minimapStrip(len(m.context.lines), nil, nil)
 	if m.minimapOn() {
 		width--
 	}
@@ -591,9 +590,9 @@ func (m Model) contextView() string {
 		for i := range m.bodyHeight() {
 			if j := m.offset + i; j < len(m.context.lines) {
 				row := ansi.Truncate(ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, ""), width, "")
-				b.WriteString(m.padCursor(row, width, j == m.cursor))
+				m.writePadded(&b, row, width, j == m.cursor)
 			} else {
-				b.WriteString(m.padCursor("", width, false))
+				m.writePadded(&b, "", width, false)
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
