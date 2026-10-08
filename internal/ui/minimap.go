@@ -18,9 +18,9 @@ func (m Model) minimapOn() bool {
 
 // minimapStrip is the minimap strip: one cell per row of the file
 // area. Each cell covers a range of view rows of the whole file and
-// carries the background of a change or a comment in its range, or the
-// cursor background when the visible window intersects the range — the
-// position and the marks of the file at a glance. Files smaller than
+// carries the cursor background when the visible window intersects the
+// range, otherwise the background of a change or a comment in its range
+// — the position and the marks of the file at a glance. Files smaller than
 // the area map one cell per row; in wrap mode the rows and the screen
 // lines no longer align, so the mapping is approximate.
 func (m Model) minimapStrip(total int, mark func(int) color.Color) []string {
@@ -43,6 +43,12 @@ func (m Model) minimapStrip(total int, mark func(int) color.Color) []string {
 			if c := mark(j); c != nil {
 				bg = c
 			}
+		}
+		// The visible window wins over the marks, so a large change
+		// block cannot hide the position. A window that covers the
+		// whole file marks nothing in particular, so the marks stay.
+		if total > h && m.offset < r1 && m.offset+h > r0 {
+			bg = m.theme.Styles.Cursor
 		}
 		if bg == nil && m.offset < r1 && m.offset+h > r0 {
 			bg = m.theme.Styles.Cursor
