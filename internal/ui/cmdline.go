@@ -61,7 +61,7 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 
 // defaultApprovalDelay is how long :lgtm shows its confirmation before
 // quitting.
-const defaultApprovalDelay = 800 * time.Millisecond
+const defaultApprovalDelay = 1500 * time.Millisecond
 
 // approve ends the review approved: a short confirmation moment in the
 // middle of the screen, then quit with exit code 0.

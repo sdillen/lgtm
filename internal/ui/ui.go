@@ -58,7 +58,7 @@ type Options struct {
 	// OSC 52/tool chain.
 	Copy func(string) error
 	// ApprovalDelay is the confirmation moment of :lgtm; 0 means the
-	// default of 800ms.
+	// default of 1.5s.
 	ApprovalDelay time.Duration
 	// Search answers context questions beyond the review: the repo
 	// file listing, reading files in their new state, project word
