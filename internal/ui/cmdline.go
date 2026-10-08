@@ -218,23 +218,19 @@ func (m Model) optionStates() string {
 		" " + m.optionState("wrap") + " " + m.optionState("ignorews")
 }
 
-// fail shows an error message in the bottom line.
+// fail shows an error toast.
 func (m *Model) fail(msg string) {
 	m.message, m.messageErr = msg, true
 }
 
-// bottomLine is the command line while typing, otherwise the last command
-// result; "" if there is neither.
+// bottomLine is the command line or search while typing; "" otherwise.
+// Command results are shown as a toast.
 func (m Model) bottomLine() string {
-	switch {
-	case m.mode == modeCmdline:
+	switch m.mode {
+	case modeCmdline:
 		return ":" + m.cmdline
-	case m.mode == modeSearch:
+	case modeSearch:
 		return "/" + m.searchQuery
-	case m.messageErr:
-		return m.theme.Styles.Deleted.Render(m.message)
-	case m.message != "":
-		return m.message
 	}
 	return ""
 }

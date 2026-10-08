@@ -221,19 +221,19 @@ func (m Model) overlayBox() (box string, x, y int, ok bool) {
 // drawer at the top left.
 func (m Model) withOverlay(view string) string {
 	if m.bodyHeight() < boxChromeRows+1 || m.width < boxChromeCols+1 {
-		return view
+		return m.withToast(view)
 	}
 	box, x, y, ok := m.overlayBox()
 	if !ok {
-		return view
+		return m.withToast(view)
 	}
 	// The scrim darkens the view behind the overlay, so the box reads
 	// as a layer above the code.
 	view = dimView(view)
-	return lipgloss.NewCompositor(
+	return m.withToast(lipgloss.NewCompositor(
 		lipgloss.NewLayer(view),
 		lipgloss.NewLayer(box).X(x).Y(m.overlayY(y)).Z(1),
-	).Render()
+	).Render())
 }
 
 // dimSGR matches the truecolour SGR sequences of the rendered view.

@@ -40,7 +40,9 @@ func (l *liveReview) options(dir string) ui.Options {
 func (l *liveReview) change(m tea.Model, next ...diff.ReviewFile) tea.Model {
 	l.next = next
 	l.changes <- struct{}{}
-	msg := m.Init()()
+	// Init batches the wait for the signal with the toast decay tick;
+	// the wait is the first command.
+	msg := m.Init()().(tea.BatchMsg)[0]()
 	m, cmd := m.Update(msg)
 	m, _ = m.Update(cmd())
 	return m
@@ -173,6 +175,7 @@ func TestOrphansOfAFileThatLeftTheReviewShowInTheFirstFile(t *testing.T) {
 	m = l.change(m, mainV1)
 
 	m = press(m, "R")
+	m = pressMsg(m, tea.KeyPressMsg{Code: tea.KeyEscape}) // clears the reload toast
 
 	if s := screen(m); !strings.Contains(s, "other.go:1 (verwaist)") || !strings.Contains(s, "why other") {
 		t.Errorf("orphan of the gone file not shown in the first file:\n%s", s)
@@ -196,7 +199,7 @@ func TestACheckFromBeforeRIsDropped(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{mainV1}, "main", themeFor, l.options(t.TempDir())), 60, 12)
 	l.next = []diff.ReviewFile{mainV2}
 	l.changes <- struct{}{}
-	m, check := m.Update(m.Init()())
+	m, check := m.Update(m.Init()().(tea.BatchMsg)[0]())
 	stale := check() // resolved while the source was at mainV2
 
 	l.next = []diff.ReviewFile{diff.New("main.go", "package main\n", "package main\n\n// z\n")}

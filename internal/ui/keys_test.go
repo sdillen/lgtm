@@ -180,8 +180,9 @@ func TestEscCancelsAPendingSequence(t *testing.T) {
 	if strings.Contains(screen(m), "next hunk") {
 		t.Errorf("which-key still shown after <esc>:\n%s", screen(m))
 	}
-	// c alone is unbound: the cursor stays on the first row.
-	if !strings.HasPrefix(screen(m), "⋯ 1 unveränderte Zeile ⋯") {
+	// c acts on the first row, a fold marker: the cursor did not move,
+	// so the toast says it is not on a code line.
+	if !strings.Contains(screen(m), "move the cursor to a code line") {
 		t.Errorf("view moved:\n%s", screen(m))
 	}
 }

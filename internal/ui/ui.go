@@ -60,6 +60,8 @@ type Options struct {
 	// ApprovalDelay is the confirmation moment of :lgtm; 0 means the
 	// default of 1.5s.
 	ApprovalDelay time.Duration
+	// ToastTTL is how long a toast stays; 0 means the default.
+	ToastTTL time.Duration
 	// Search answers context questions beyond the review: the repo
 	// file listing, reading files in their new state, project word
 	// search and heuristic definitions. nil disables the all-files
@@ -131,8 +133,9 @@ type Model struct {
 	whichKey   bool              // the which-key popup is shown
 	helpOffset int               // first visible line of the help
 	cmdline    string            // text of the command line
-	message    string            // command result in the bottom line, until the next key
+	message    string            // command result, shown as a toast until the next key or its expiry
 	messageErr bool              // message is an error
+	messageAt  time.Time         // when the toast was shown, for its decay
 
 	// state holds the read status per file; dir is where it is saved,
 	// "" disables saving.
@@ -291,6 +294,9 @@ type whichKeyMsg struct{ gen int }
 // approveMsg ends the program after the :lgtm confirmation moment.
 type approveMsg struct{}
 
+// toastTickMsg checks whether the toast has decayed.
+type toastTickMsg struct{}
+
 // New returns a Model showing files of the review subject label with the
 // given theme.
 func New(files []diff.ReviewFile, label string, th theme.Theme, opts Options) Model {
@@ -372,10 +378,11 @@ func (m Model) allFileIndexes() []int {
 	return all
 }
 
-// Init starts waiting for the watcher's change signals.
-func (m Model) Init() tea.Cmd { return m.waitForChange() }
+// Init starts waiting for the watcher's change signals and the toast
+// decay ticks.
+func (m Model) Init() tea.Cmd { return tea.Batch(m.waitForChange(), toastTick()) }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -400,6 +407,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case approveMsg:
 		return m, tea.Quit
+	case toastTickMsg:
+		if m.message != "" && time.Since(m.messageAt) >= m.toastTTL() {
+			m.message, m.messageErr = "", false
+		}
+		return m, toastTick()
 	case changedMsg:
 		return m, m.checkChanges()
 	case checkedMsg:

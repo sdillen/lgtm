@@ -632,7 +632,8 @@ func TestRunWatchesTheWorkingTreeAndReloadsOnR(t *testing.T) {
 			t.Fatal(err)
 		}
 		msgs := make(chan tea.Msg, 1)
-		go func() { msgs <- m.Init()() }()
+		// Init batches the watcher wait with the toast decay tick.
+		go func() { msgs <- m.Init()().(tea.BatchMsg)[0]() }()
 		select {
 		case msg := <-msgs:
 			var cmd tea.Cmd

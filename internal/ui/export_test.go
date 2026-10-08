@@ -363,8 +363,8 @@ func TestColonLgtmApprovesAndQuitsWithZero(t *testing.T) {
 	if cmd == nil {
 		t.Fatal(":lgtm returned no command")
 	}
-	if !strings.Contains(screen(m), "lgtm") || !strings.Contains(screen(m), "approved") {
-		t.Errorf("status line lacks the approval moment:\n%s", screen(m))
+	if !strings.Contains(screen(m), "✓ LGTM") || !strings.Contains(screen(m), "approved") {
+		t.Errorf("view lacks the approval moment:\n%s", screen(m))
 	}
 	msg := cmd()
 	m, cmd = m.Update(msg)
