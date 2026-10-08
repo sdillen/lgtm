@@ -35,7 +35,7 @@ pkgs.buildGoModule {
 
   # The module sources are fetched and hashed at build time; update with
   # `nix build` after changing go.mod/go.sum.
-  vendorHash = "sha256-aCEJInMkOYPk7Z7n7E5f5+OxYbDbOzN2tomv4Aems08=";
+  vendorHash = "sha256-JrsRavPY4Q6pUd6Bytl92si2G6FB/jPkgrOaDj/6OPM=";
 
   ldflags = [
     "-s"
