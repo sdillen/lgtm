@@ -218,3 +218,28 @@ func TestRangeResolvesASnapshotRef(t *testing.T) {
 		{Path: "a.txt", Status: source.Modified, Old: "a\n", New: "b\n"},
 	})
 }
+
+func TestDeleteSnapshotsRemovesOnlyTheRefsUnderThePrefix(t *testing.T) {
+	f := newFixture(t, "main")
+	f.write("a.txt", "a\n")
+	f.commit("base")
+	src := source.New(f.repo)
+	for _, ref := range []string{"refs/lgtm/mine/1", "refs/lgtm/mine/2", "refs/lgtm/other/1"} {
+		if err := src.Snapshot(ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := src.DeleteSnapshots("refs/lgtm/mine/"); err != nil {
+		t.Fatal(err)
+	}
+
+	for ref, want := range map[string]bool{
+		"refs/lgtm/mine/1": false, "refs/lgtm/mine/2": false, "refs/lgtm/other/1": true,
+	} {
+		_, err := f.repo.Reference(plumbing.ReferenceName(ref), false)
+		if got := err == nil; got != want {
+			t.Errorf("%s exists = %v, want %v", ref, got, want)
+		}
+	}
+}

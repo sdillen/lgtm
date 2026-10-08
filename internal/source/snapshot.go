@@ -217,3 +217,29 @@ func (s *Source) storeObject(obj interface {
 	}
 	return s.repo.Storer.SetEncodedObject(o)
 }
+
+// DeleteSnapshots removes every reference whose name starts with prefix,
+// e.g. refs/lgtm/<review>/, so the snapshots are no longer protected from
+// garbage collection.
+func (s *Source) DeleteSnapshots(prefix string) error {
+	refs, err := s.repo.References()
+	if err != nil {
+		return fmt.Errorf("list references: %w", err)
+	}
+	var names []plumbing.ReferenceName
+	err = refs.ForEach(func(r *plumbing.Reference) error {
+		if strings.HasPrefix(r.Name().String(), prefix) {
+			names = append(names, r.Name())
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("list references: %w", err)
+	}
+	for _, n := range names {
+		if err := s.repo.Storer.RemoveReference(n); err != nil {
+			return fmt.Errorf("remove %s: %w", n, err)
+		}
+	}
+	return nil
+}
