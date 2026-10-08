@@ -57,7 +57,8 @@ in
     cp .bench/new.txt .bench/old.txt
   '';
   scripts.bench-compare.exec = ''
-    go run golang.org/x/perf/cmd/benchstat@latest .bench/old.txt .bench/new.txt
+    # Pinned: benchstat is not in nixpkgs, go run fetches it once.
+    go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 .bench/old.txt .bench/new.txt
   '';
   scripts.bench-profile.exec = ''
     mkdir -p .bench
