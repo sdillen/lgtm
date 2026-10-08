@@ -483,6 +483,29 @@ func TestGotoDefJumpsDirectlyToTheOnlyDefinition(t *testing.T) {
 	})
 }
 
+// TestGotoDefOpensTheFoldHidingTheDefinition pins that gd into a review
+// file shows the definition's code even when it lies in a closed fold.
+func TestGotoDefOpensTheFoldHidingTheDefinition(t *testing.T) {
+	body := "p1\np2\np3\np4\nfunc Target() {}\np6\np7\np8\np9\n"
+	lib := diff.New("lib.go", body+"p10\n", "top\n"+body+"p10\nbottom\n")
+	caller := diff.New("main.go", "old\nTarget()\n", "new\nTarget()\n")
+	r := fakeRepo{
+		files: []string{"lib.go", "main.go"},
+		contents: map[string]string{
+			"lib.go":  "top\n" + body + "p10\nbottom\n",
+			"main.go": "new\nTarget()\n",
+		},
+	}
+	m := start(ui.New([]diff.ReviewFile{lib, caller}, "main", themeFor, withSearch(r)), 60, 20)
+	m = press(m, "]", "f", "j", "j", "j")
+
+	m = press(m, "g", "d")
+
+	if s := screen(m); !strings.Contains(s, "func Target() {}") {
+		t.Errorf("gd left the definition in a closed fold:\n%s", s)
+	}
+}
+
 // TestGotoDefShowsASelectionForMultipleDefinitions pins that gd lists
 // the candidates when several lines define the symbol.
 func TestGotoDefShowsASelectionForMultipleDefinitions(t *testing.T) {

@@ -450,13 +450,29 @@ func (m Model) resultsKey(msg tea.KeyPressMsg) Model {
 
 // jumpToHit opens the file of the hit at its line and records the
 // jump: the review file when the path is part of the review, a context
-// file otherwise.
+// file otherwise. In a review file the fold hiding the line is opened,
+// so the hit's code is shown.
 func (m *Model) jumpToHit(h search.Hit) {
 	if fi, ok := m.pathIndex[h.Path]; ok {
 		m.jumpToFile(fi, h.Line-1)
+		m.revealLine(h.Line - 1)
 		return
 	}
 	m.openContextAt(h.Path, h.Line-1)
+}
+
+// revealLine opens what hides the line of the current review file (a
+// collapsed file or a closed fold) and puts the cursor on it.
+func (m *Model) revealLine(line int) {
+	if m.fileCollapsed[m.fileIdx] {
+		m.fileCollapsed[m.fileIdx] = false
+	}
+	if fi := m.foldOfLine(line); fi >= 0 {
+		m.foldsOpen[fi] = true
+	}
+	m.invalidateRows()
+	m.cursor = m.rowOfLine(line)
+	m.scrollCursorIntoView()
 }
 
 // moveCol moves the cursor column by one rune: left (dir -1) or right
