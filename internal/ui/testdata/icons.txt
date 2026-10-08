@@ -1,0 +1,12 @@
+        1 + x 
+
+╭───────────────╮
+│ Files         │
+│  added.go  ✓ │
+│  deleted.go  │
+│  modified.go │
+│  renamed.go  │
+╰───────────────╯
+
+
+added.go  1/4  +1 −0

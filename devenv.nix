@@ -6,9 +6,28 @@
   ...
 }:
 
+let
+  # Head of the current git checkout; the Nix package embeds it so
+  # `lgtm --version` reports the exact revision the binary was built from.
+  # On a dirty tree fetchGit reports rev 0000… and puts the real revision
+  # in dirtyShortRev, suffixed with -dirty.
+  rev = builtins.tryEval (
+    builtins.fetchGit { url = "file://${toString ./.}"; }
+  );
+  commit =
+    if !rev.success then
+      "unknown"
+    else if rev.value.rev == "0000000000000000000000000000000000000000" then
+      rev.value.dirtyShortRev or "unknown"
+    else
+      builtins.substring 0 7 rev.value.rev;
+
+  lgtm = import ./package.nix { inherit pkgs lib commit; };
+in
 {
   # https://devenv.sh/basics/
   env.GREET = "lgtm";
+  env.CGO_ENABLED = "0";
 
   # https://devenv.sh/packages/
   packages = with pkgs; [
@@ -16,6 +35,7 @@
     gopls # Go language server
     golangci-lint
     delve # Go debugger
+    lgtm # built with buildGoModule, embeds version and commit
   ];
 
   # https://devenv.sh/languages/
@@ -23,7 +43,7 @@
 
   # https://devenv.sh/scripts/
   scripts.check.exec = ''
-    gofmt -l . && go vet ./...
+    gofmt -l $(git ls-files -co --exclude-standard '*.go') && go vet ./...
   '';
 
   # https://devenv.sh/basics/
@@ -41,5 +61,6 @@
   git-hooks.hooks = {
     gofmt.enable = true;
     gotest.enable = true;
+    golangci-lint.enable = true;
   };
 }
