@@ -97,6 +97,22 @@ func TestAllFilesPickerOpensAReviewFile(t *testing.T) {
 	}
 }
 
+// TestAllFilesPickerOpensAFileInAnEmptyReview pins that a review
+// without files still lets the all-files picker open a repo file.
+func TestAllFilesPickerOpensAFileInAnEmptyReview(t *testing.T) {
+	m := start(ui.New(nil, "main", themeFor, withSearch(repo)), 60, 5)
+
+	m = openPickerAll(m)
+	for _, r := range "util" {
+		m = press(m, string(r))
+	}
+	m = press(m, "enter")
+
+	if !strings.Contains(screen(m), "lib/util.go  ctx") {
+		t.Errorf("picker did not open the context file:\n%s", screen(m))
+	}
+}
+
 // TestContextFileOpensReadOnlyInTheNewState pins the acceptance
 // criterion "arbitrary repository files open read-only in the new
 // state": the all-files picker opens a file beyond the review, showing

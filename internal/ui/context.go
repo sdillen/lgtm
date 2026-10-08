@@ -151,6 +151,9 @@ func (m *Model) syncJump() {
 func (m *Model) recordJump(e jumpEntry) {
 	e.col = m.col
 	m.syncJump()
+	if len(m.jumps) == 0 {
+		m.jumpPos = -1 // a review without files starts with no entry
+	}
 	if m.jumpPos >= 0 && m.jumps[m.jumpPos] == e {
 		return
 	}
