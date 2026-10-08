@@ -39,6 +39,10 @@ type fileHighlights struct {
 	// and dies with the highlights, which are rebuilt whenever the file
 	// or the theme changes.
 	rendered map[lineKey]renderedLine
+	// screens caches the screen rows made of rendered lines: scrolled,
+	// cut to the width and padded. Measuring and cutting the styled
+	// text took more of a frame than rendering it.
+	screens map[screenKey]renderedLine
 }
 
 // maxRendered bounds the line cache; it is cleared when full, which
@@ -57,6 +61,16 @@ type lineKey struct {
 	skip, need int
 	seg0       *theme.Segment
 	word0      *diff.Word
+}
+
+// screenKey is everything a screen row depends on besides its rendered
+// line: the horizontal scroll, the width it is cut to and whether it is
+// padded for the minimap.
+type screenKey struct {
+	line    lineKey
+	hscroll int
+	width   int
+	pad     bool
 }
 
 // renderedLine is a cached line; text and kind guard against a file
@@ -80,6 +94,21 @@ func (h *fileHighlights) storeLine(k lineKey, l diff.Line, out string) {
 		h.rendered = make(map[lineKey]renderedLine)
 	}
 	h.rendered[k] = renderedLine{text: l.Text, kind: l.Kind, out: out}
+}
+
+func (h *fileHighlights) cachedScreen(k screenKey, l diff.Line) (string, bool) {
+	e, ok := h.screens[k]
+	if !ok || e.kind != l.Kind || e.text != l.Text {
+		return "", false
+	}
+	return e.out, true
+}
+
+func (h *fileHighlights) storeScreen(k screenKey, l diff.Line, out string) {
+	if h.screens == nil || len(h.screens) >= maxRendered {
+		h.screens = make(map[screenKey]renderedLine)
+	}
+	h.screens[k] = renderedLine{text: l.Text, kind: l.Kind, out: out}
 }
 
 // newFileHighlights returns the lazy highlights of a review file.

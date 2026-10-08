@@ -142,3 +142,34 @@ func TestLineCacheMatchesUncachedRendering(t *testing.T) {
 		}
 	}
 }
+
+// The screen row cache must never change a frame: every frame of a
+// session of scrolling, cursor, column and horizontal scroll moves,
+// minimap toggles and resizes equals the same frame drawn with empty
+// caches.
+func TestScreenCacheMatchesUncachedFrames(t *testing.T) {
+	f := bigFile(60)
+	for i := range f.Lines {
+		f.Lines[i].Text = fmt.Sprintf("\tfunc f%d() { return a + b } // a note that runs past the width", i)
+		if i%3 == 0 {
+			f.Lines[i].Old = i + 1
+			f.Lines[i].Words = []diff.Word{{Start: 6, End: 10}}
+		}
+	}
+	m := startM(New([]diff.ReviewFile{f}, "main", themeFor, Options{}), 50, 12)
+	steps := []tea.Msg{}
+	for _, k := range []string{"j", "j", "l", "z", "l", "j", "m", "k", "$", "z", "h", "0", "m", "j"} {
+		steps = append(steps, tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
+	}
+	steps = append(steps, tea.WindowSizeMsg{Width: 40, Height: 10}, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	for i, msg := range steps {
+		next, _ := m.Update(msg)
+		m = next.(Model)
+		m.View() // warm the caches
+		warm := m.View().Content
+		m.hl.rendered, m.hl.screens = nil, nil
+		if cold := m.View().Content; warm != cold {
+			t.Fatalf("step %d (%v): cached frame\n%q\nuncached\n%q", i, msg, warm, cold)
+		}
+	}
+}

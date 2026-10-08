@@ -1196,8 +1196,7 @@ func (m Model) fileView() string {
 			if j := m.offset + i; j < len(rows) {
 				r := rows[j]
 				hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
-				row := ansi.Truncate(ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, ""), width, "")
-				m.writePadded(&b, row, width, hl)
+				m.writeScreenRow(&b, r, hl, width)
 			} else {
 				m.writePadded(&b, "", width, false)
 			}
@@ -1575,32 +1574,72 @@ func (m Model) fileAdded() bool {
 // wash backgrounds of changed lines and the cursor background are applied
 // on top of the token styles.
 func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
-	mark := -1
-	if cursor && idx == m.cursorViewLine() && m.rows()[m.cursor].line == idx {
-		mark = colMark(l.Text, m.col)
-	}
-	// Flashes and the theme fade change the colours from frame to frame.
-	if m.hl == nil || m.flash != nil || m.fade != nil {
-		return m.drawLine(l, idx, cursor, mark)
-	}
-	segs := m.segments(l, idx)
-	if len(segs) == 0 {
-		return m.drawLine(l, idx, cursor, mark)
-	}
-	// The window is only a cache key: the prefix of drawLine (line
-	// numbers and marker) is fixed per line, so an approximation is
-	// as unique as the exact width.
-	skip, need := m.bodyWindow(12)
-	key := lineKey{idx: idx, cursor: cursor, mark: mark, skip: skip, need: need, seg0: &segs[0]}
-	if len(l.Words) > 0 {
-		key.word0 = &l.Words[0]
+	key, ok := m.lineCacheKey(l, idx, cursor)
+	if !ok {
+		return m.drawLine(l, idx, cursor, key.mark)
 	}
 	if out, ok := m.hl.cachedLine(key, l); ok {
 		return out
 	}
-	out := m.drawLine(l, idx, cursor, mark)
+	out := m.drawLine(l, idx, cursor, key.mark)
 	m.hl.storeLine(key, l, out)
 	return out
+}
+
+// lineCacheKey is the key of the rendered file line idx in the line
+// cache; ok is false when the line must not be cached. The key carries
+// the column mark either way.
+func (m Model) lineCacheKey(l diff.Line, idx int, cursor bool) (key lineKey, ok bool) {
+	key.mark = -1
+	if cursor && idx == m.cursorViewLine() && m.rows()[m.cursor].line == idx {
+		key.mark = colMark(l.Text, m.col)
+	}
+	// Flashes and the theme fade change the colours from frame to frame.
+	if m.hl == nil || m.flash != nil || m.fade != nil {
+		return key, false
+	}
+	segs := m.segments(l, idx)
+	if len(segs) == 0 {
+		return key, false
+	}
+	// The window is only a cache key: the prefix of drawLine (line
+	// numbers and marker) is fixed per line, so an approximation is
+	// as unique as the exact width.
+	key.skip, key.need = m.bodyWindow(12)
+	key.idx, key.cursor, key.seg0 = idx, cursor, &segs[0]
+	if len(l.Words) > 0 {
+		key.word0 = &l.Words[0]
+	}
+	return key, true
+}
+
+// writeScreenRow writes one screen row of the file view without wrap:
+// the row scrolled by hscroll, cut to width and padded (writePadded).
+// Rows of file lines come from the screen cache, so a frame only
+// measures and cuts the lines whose state changed.
+func (m Model) writeScreenRow(b *strings.Builder, r row, hl bool, width int) {
+	render := func(b *strings.Builder) {
+		m.writePadded(b, ansi.Truncate(ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, ""), width, ""), width, hl)
+	}
+	if r.note != nil || r.meta != "" || r.collapsed || r.header != "" || r.fold >= 0 || r.line < 0 {
+		render(b)
+		return
+	}
+	l := m.files[m.fileIdx].Lines[r.line]
+	key, ok := m.lineCacheKey(l, r.line, hl)
+	if !ok {
+		render(b)
+		return
+	}
+	sk := screenKey{line: key, hscroll: m.hscroll, width: width, pad: m.minimapOn()}
+	if s, ok := m.hl.cachedScreen(sk, l); ok {
+		b.WriteString(s)
+		return
+	}
+	var sb strings.Builder
+	render(&sb)
+	m.hl.storeScreen(sk, l, sb.String())
+	b.WriteString(sb.String())
 }
 
 // drawLine renders one line of the current file without the cache.
