@@ -55,8 +55,9 @@ func (m Model) minimapStrip(total int, mark func(int) color.Color) []string {
 }
 
 // minimapMark is the background of one view row in the minimap: the
-// comment category colour of a comment row, the wash of a changed
-// line, nothing for the rest.
+// comment category colour of a comment row, the colour of the +/−
+// marker for a changed line (stronger than the line wash, so the mark
+// stands out in the narrow strip), nothing for the rest.
 func (m Model) minimapMark(rows []row, j int) color.Color {
 	r := rows[j]
 	if r.note != nil {
@@ -67,9 +68,9 @@ func (m Model) minimapMark(rows []row, j int) color.Color {
 	}
 	switch m.files[m.fileIdx].Lines[r.line].Kind {
 	case diff.Added:
-		return m.theme.Styles.AddedBG
+		return m.theme.Styles.Added.GetForeground()
 	case diff.Deleted:
-		return m.theme.Styles.DeletedBG
+		return m.theme.Styles.Deleted.GetForeground()
 	}
 	return nil
 }

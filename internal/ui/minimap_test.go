@@ -44,7 +44,7 @@ var minimapFile = diff.New("map.txt", numbered(100),
 
 // TestMinimapMarksChangesAndComments pins the acceptance criterion
 // "Minimap-Scrollbar zeigt Änderungen und Kommentare": the strip cells
-// covering the changed lines carry the added wash, the cell of a
+// covering the changed lines carry the colour of the + marker, the cell of a
 // comment row the category colour. The strip is one column at the
 // right edge of the file area.
 func TestMinimapMarksChangesAndComments(t *testing.T) {
@@ -55,10 +55,10 @@ func TestMinimapMarksChangesAndComments(t *testing.T) {
 
 	// The added marks sit on the cells covering lines 051 and 096:
 	// screen rows 5 and 9.
-	if !endsWithCell(m.View().Content, "line 006", "48;2;31;44;56") {
+	if !endsWithCell(m.View().Content, "line 006", "48;2;158;206;106") {
 		t.Errorf("minimap lacks the added mark of line 051:\n%s", screen(m))
 	}
-	if !endsWithCell(m.View().Content, "line 010", "48;2;31;44;56") {
+	if !endsWithCell(m.View().Content, "line 010", "48;2;158;206;106") {
 		t.Errorf("minimap lacks the added mark of line 096:\n%s", screen(m))
 	}
 
