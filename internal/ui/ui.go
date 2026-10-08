@@ -261,6 +261,13 @@ type Model struct {
 	// active overlay slide-in; both tick on frameMsg.
 	smooth *scrollTween
 	slide  *slideTween
+
+	// flash is the highlight of freshly changed lines after a reload,
+	// fade the cross-fade of :theme, shimmer the frame counter of the
+	// approval moment; all tick on frameMsg.
+	flash   *flashTween
+	fade    *themeFade
+	shimmer int
 }
 
 // rowsCache is the cached row list of rows().
@@ -482,6 +489,7 @@ func (m Model) do(a keymap.Action, count int) (Model, tea.Cmd) {
 		return m, m.quitAction()
 	case actReload:
 		m.reload()
+		return m, m.animCmd()
 	case actInterdiff:
 		m.toggleInterdiff()
 		return m, nil
@@ -1355,6 +1363,7 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 	if wash != nil && m.files[m.fileIdx].Added() {
 		wash = nil
 	}
+	wash = m.flashWash(m.files[m.fileIdx].Path, l, wash)
 	if wash != nil {
 		markerStyle = markerStyle.Background(wash)
 	}

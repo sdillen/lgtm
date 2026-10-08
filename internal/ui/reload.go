@@ -125,6 +125,7 @@ func (m *Model) reload() {
 	for i, f := range m.files {
 		collapsed[f.Path] = m.fileCollapsed[i]
 	}
+	m.startFlash(m.files)
 	m.full = next
 	m.loadInterdiff()
 	if m.interdiff && m.inter != nil {
@@ -137,6 +138,7 @@ func (m *Model) reload() {
 	m.changed = 0
 	m.loadGen++
 	m.restore(at)
+	m.dropIdleFlash()
 
 	m.message = "neu geladen"
 	switch {

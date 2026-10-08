@@ -452,7 +452,22 @@ func TestColonLgtmApprovesWithExitCodeZero(t *testing.T) {
 	if cmd == nil {
 		t.Fatal(":lgtm returned no command")
 	}
-	msg := cmd()
+	// The command batches the approval timer with the frame tick of
+	// the shimmer; the timer is the message that ends the program.
+	var msg tea.Msg
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if c == nil {
+				continue
+			}
+			if got := c(); fmt.Sprintf("%T", got) == "ui.approveMsg" {
+				msg = got
+			}
+		}
+	}
+	if msg == nil {
+		t.Fatal(":lgtm scheduled no approval timer")
+	}
 	final, cmd := m.Update(msg)
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("approval moment returned %T, want tea.QuitMsg", cmd())

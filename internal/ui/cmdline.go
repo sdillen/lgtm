@@ -50,6 +50,7 @@ func (m Model) execute(line string) (Model, tea.Cmd) {
 		return m, m.approve()
 	case "theme":
 		m.setTheme(args)
+		return m, m.animCmd()
 	case "set":
 		m.set(args)
 	default:
@@ -72,18 +73,8 @@ func (m *Model) approve() tea.Cmd {
 	if delay == 0 {
 		delay = defaultApprovalDelay
 	}
-	return tea.Tick(delay, func(time.Time) tea.Msg { return approveMsg{} })
-}
-
-// lgtmBox is the confirmation moment of :lgtm: a glowing "✓ LGTM"
-// in the middle of the screen while the dimmed review waits behind it.
-func (m Model) lgtmBox() string {
-	lines := []string{
-		m.theme.Styles.Status.Bold(true).Render("✓ LGTM"),
-		"",
-		m.theme.Styles.Fold.Render("review approved"),
-	}
-	return m.box("", lines)
+	m.startSlideOverlay(m.bodyHeight())
+	return tea.Batch(tea.Tick(delay, func(time.Time) tea.Msg { return approveMsg{} }), m.animCmd())
 }
 
 // setTheme switches to the named theme, or names the current one.
@@ -101,10 +92,7 @@ func (m *Model) setTheme(args []string) {
 			m.fail(err.Error())
 			return
 		}
-		m.theme = th
-		if len(m.files) > 0 {
-			m.hl = newFileHighlights(m.theme.Highlighter, m.files[m.fileIdx])
-		}
+		m.startThemeFade(th)
 	}
 }
 

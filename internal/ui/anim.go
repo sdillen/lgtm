@@ -173,6 +173,18 @@ func (m *Model) stepFrames() {
 	if m.slide != nil {
 		m.stepSlide()
 	}
+	if m.fade != nil {
+		m.stepFade()
+	}
+	if m.flash != nil {
+		m.flash.frames++
+		if m.flash.frames >= flashFrames {
+			m.flash = nil
+		}
+	}
+	if m.approved {
+		m.shimmer++
+	}
 }
 
 // frameCmd ticks the animations once.
@@ -182,7 +194,7 @@ func (m Model) frameCmd() tea.Cmd {
 
 // animCmd is the frame tick while an animation runs, nil otherwise.
 func (m Model) animCmd() tea.Cmd {
-	if m.smooth != nil || m.slide != nil {
+	if m.smooth != nil || m.slide != nil || m.fade != nil || m.flash != nil || (m.approved && m.animOn()) {
 		return m.frameCmd()
 	}
 	return nil
