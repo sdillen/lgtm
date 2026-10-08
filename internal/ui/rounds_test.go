@@ -58,7 +58,7 @@ func TestLeaderITogglesBetweenFullDiffAndInterdiff(t *testing.T) {
 	assertScreen(t, m, []string{
 		"⋯ 2 unveränderte Zeilen ⋯",
 		"        3 + B",
-		"a.go  1/1  +1 −0  Runde 2  [interdiff]",
+		"Runde 2  [interdiff]  a.go  1/1  +1 −0",
 	})
 
 	m = interdiffKey(m)

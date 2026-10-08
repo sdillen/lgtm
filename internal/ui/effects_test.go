@@ -131,8 +131,8 @@ func colours(s string) int {
 	return len(seen)
 }
 
-// TestStatusLineRunsThroughAGradient pins that the status line is
-// coloured along a gradient while its text stays the same.
+// TestStatusLineRunsThroughAGradient pins that every element of the
+// status line has its own colour while its text stays the same.
 func TestStatusLineRunsThroughAGradient(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 60, 6)
 	rows := strings.Split(m.View().Content, "\n")
@@ -140,8 +140,8 @@ func TestStatusLineRunsThroughAGradient(t *testing.T) {
 	if got := ansi.Strip(last); !strings.Contains(got, "main.go  1/1  +1 −1") {
 		t.Errorf("status text changed: %q", got)
 	}
-	if n := colours(last); n < 5 {
-		t.Errorf("status line has %d distinct colours, want a gradient", n)
+	if n := colours(last); n < 3 {
+		t.Errorf("status line has %d distinct colours, want one per element", n)
 	}
 }
 

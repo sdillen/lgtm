@@ -6,6 +6,7 @@ package ui
 
 import (
 	"fmt"
+	"hash/fnv"
 	"image/color"
 	"strings"
 	"time"
@@ -1277,23 +1278,23 @@ func (m Model) contentWidth() int {
 // markers of the active options and the keys of a pending sequence. A
 // rename names both paths as "old → new". On a narrow terminal the
 // line gives way step by step: the progress label goes, then the
-// progress bar, and finally the path is shortened in the middle, so
+// review range and the progress bar, and finally the path is shortened in the middle, so
 // the state markers stay readable.
 func (m Model) statusLine(width int) string {
-	for level := 0; level <= 2; level++ {
+	for level := 0; level <= 3; level++ {
 		if s := m.statusAt(level, -1); width <= 0 || ansi.StringWidth(s) <= width {
 			return s
 		}
 	}
 	// The rest of the line without the path is what the path may not
 	// take away.
-	rest := ansi.StringWidth(m.statusAt(2, 0))
-	return m.statusAt(2, max(8, width-rest))
+	rest := ansi.StringWidth(m.statusAt(3, 0))
+	return m.statusAt(3, max(8, width-rest))
 }
 
 // statusAt renders the status line at a squeeze level: 0 is the full
-// line, 1 drops the label of the progress bar, 2 drops the bar. pathW
-// limits the width of the path, -1 leaves it alone.
+// line, 1 drops the label of the progress bar, 2 the review range, 3
+// the bar. pathW limits the width of the path, -1 leaves it alone.
 func (m Model) statusAt(level, pathW int) string {
 	f := m.files[m.fileIdx]
 	added, deleted := f.Stats()
@@ -1304,22 +1305,30 @@ func (m Model) statusAt(level, pathW int) string {
 	if pathW >= 0 {
 		path = shortenPath(path, pathW, f.OldPath != "")
 	}
-	head := []string{
-		path,
-		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
-		fmt.Sprintf("+%d −%d", added, deleted),
-	}
+	// The review-wide elements come first, the file elements after.
+	var head []string
 	if m.opts.Round > 0 {
 		head = append(head, fmt.Sprintf("Runde %d", m.opts.Round))
 	}
 	if m.interdiff {
 		head = append(head, "[interdiff]")
 	}
+	head = append(head,
+		path,
+		fmt.Sprintf("%d/%d", m.fileIdx+1, len(m.files)),
+		fmt.Sprintf("+%d −%d", added, deleted),
+	)
 	// The gradient head is followed by the review progress and the
 	// comment badges, which carry their own colours, and the plain
 	// rest of the markers.
-	out := []string{m.statusGradient(strings.Join(head, "  "))}
-	if p := m.progressBar(level == 0); p != "" && level < 2 {
+	var out []string
+	if level < 2 {
+		if r := m.reviewRange(); r != "" {
+			out = append(out, r)
+		}
+	}
+	out = append(out, m.statusSegments(head))
+	if p := m.progressBar(level == 0); p != "" && level < 3 {
 		out = append(out, p)
 	}
 	if b := m.commentBadges(); b != "" {
@@ -1353,16 +1362,71 @@ func (m Model) statusAt(level, pathW int) string {
 	return strings.Join(out, m.theme.Styles.Status.Render("  "))
 }
 
-// statusGradient colours the status line text with a gradient from the
-// accent to the cyan of the nit category; the text itself is unchanged.
-// Without a colour for either end the plain accent style stays.
-func (m Model) statusGradient(text string) string {
-	st := m.theme.Styles
-	from, to := st.Status.GetForeground(), st.CommentNit.GetForeground()
-	if isUnset(from) || isUnset(to) {
-		return st.Status.Render(text)
+// reviewRange names where the review runs from and to as "base → branch";
+// with only one of the two known it shows just that one. Every name has
+// its own colour gradient, picked from the theme by the name itself, so
+// the same branch looks the same every time.
+func (m Model) reviewRange() string {
+	base, branch := m.opts.Base, m.opts.Branch
+	if base == "" && branch == "" {
+		return ""
 	}
-	return gradientText(text, 0, false, []color.Color{from, to})
+	st := m.theme.Styles
+	var pal []color.Color
+	for _, s := range []lipgloss.Style{st.Status, st.Purple, st.CommentMust, st.Orange, st.CommentQuestion, st.CommentNit} {
+		if c := s.GetForeground(); !isUnset(c) {
+			pal = append(pal, c)
+		}
+	}
+	if len(pal) < 3 {
+		return st.Status.Render(strings.TrimSpace(strings.Join([]string{base, "→", branch}, " ")))
+	}
+	n := len(pal)
+	bi, ri := nameHue(base)%n, nameHue(branch)%n
+	// Base and branch start at least two palette steps apart; the palette
+	// is ordered by hue, so neighbours look alike.
+	if d := (ri - bi + n) % n; d < 2 || d > n-2 {
+		ri = (bi + 2) % n
+	}
+	colour := func(name string, i int) string {
+		return gradientText(name, 0, false, []color.Color{pal[i], pal[(i+2)%n]})
+	}
+	var parts []string
+	if base != "" {
+		parts = append(parts, colour(base, bi))
+	}
+	parts = append(parts, st.Status.Render("→"))
+	if branch != "" {
+		parts = append(parts, colour(branch, ri))
+	}
+	return strings.Join(parts, st.Status.Render(" "))
+}
+
+// nameHue hashes a ref name to a stable number.
+func nameHue(name string) int {
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return int(h.Sum32() >> 1)
+}
+
+// statusSegments colours each element of the status line head in its
+// own colour, spread over a gradient from the accent through the
+// question blue to the cyan of the nit category. Without a colour for
+// one of the stops the plain accent style stays.
+func (m Model) statusSegments(segs []string) string {
+	st := m.theme.Styles
+	stops := []color.Color{st.Status.GetForeground(), st.CommentQuestion.GetForeground(), st.CommentNit.GetForeground()}
+	for _, c := range stops {
+		if isUnset(c) {
+			return st.Status.Render(strings.Join(segs, "  "))
+		}
+	}
+	cols := lipgloss.Blend1D(max(len(segs), 2), stops...)
+	out := make([]string, len(segs))
+	for i, seg := range segs {
+		out[i] = lipgloss.NewStyle().Foreground(cols[i]).Render(seg)
+	}
+	return strings.Join(out, st.Status.Render("  "))
 }
 
 // renderRow renders one row of the current file, highlighting the cursor.
