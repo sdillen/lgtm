@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +14,8 @@ import (
 func (m *Model) openDrawer() {
 	m.mode = modeDrawer
 	m.drawerCursor = m.rowOfFile(m.fileIdx)
+	m.drawerTop = 0
+	m.scrollDrawerToCursor()
 	m.startSlideOverlay(-m.bodyHeight())
 }
 
@@ -39,9 +42,27 @@ func (m *Model) moveDrawer(dir int) {
 	for m.drawerCursor+dir >= 0 && m.drawerCursor+dir < len(m.tree) {
 		m.drawerCursor += dir
 		if !m.tree[m.drawerCursor].dir {
-			return
+			break
 		}
 	}
+	m.scrollDrawerToCursor()
+}
+
+// drawerRows is the number of tree rows that fit into the drawer.
+func (m Model) drawerRows() int {
+	return max(1, m.bodyHeight()-boxChromeRows)
+}
+
+// scrollDrawerToCursor moves the drawer window the least needed to show
+// the selected row.
+func (m *Model) scrollDrawerToCursor() {
+	rows := m.drawerRows()
+	if m.drawerCursor < m.drawerTop {
+		m.drawerTop = m.drawerCursor
+	} else if m.drawerCursor >= m.drawerTop+rows {
+		m.drawerTop = m.drawerCursor - rows + 1
+	}
+	m.drawerTop = max(0, min(m.drawerTop, len(m.tree)-rows))
 }
 
 // jumpToDrawerFile opens the file the drawer selection points at. The
@@ -129,21 +150,19 @@ func (m Model) hasComments(path string) bool {
 	return false
 }
 
-// drawerBox is the file drawer: the tree in a rounded box, cut to the
-// terminal height with a marker when the tree is taller.
+// drawerBox is the file drawer: the tree in a rounded box, scrolled
+// with the selection when the tree is taller than the terminal; the
+// title then shows the visible range.
 func (m Model) drawerBox() string {
 	lines := m.treeLines(m.drawerCursor)
-	return m.box("Files", m.cutTree(lines))
-}
-
-// cutTree cuts tree lines that do not fit above the status line,
-// marking the cut like the other overlays.
-func (m Model) cutTree(lines []string) []string {
-	rows := max(1, m.bodyHeight()-boxChromeRows)
+	rows := m.drawerRows()
+	m.scrollDrawerToCursor()
 	if len(lines) <= rows {
-		return lines
+		return m.box("Files", lines)
 	}
-	return append(lines[:max(0, rows-1)], "…")
+	end := min(m.drawerTop+rows, len(lines))
+	title := fmt.Sprintf("Files  %d–%d of %d", m.drawerTop+1, end, len(lines))
+	return m.box(title, lines[m.drawerTop:end])
 }
 
 // sidebarWidth is the width of the permanent sidebar: the widest tree

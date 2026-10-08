@@ -147,6 +147,7 @@ type Model struct {
 	// drawerCursor is the selected row while the drawer is open.
 	tree         []treeRow
 	drawerCursor int
+	drawerTop    int  // first tree row shown while the drawer scrolls
 	sidebar      bool // the permanent sidebar is shown
 	// sidebarW is sidebarWidth for one frame, 0 when unknown. View sets
 	// it on its own copy of the model: every row asks for the content

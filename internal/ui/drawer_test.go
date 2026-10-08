@@ -387,28 +387,36 @@ func TestDrawerMarksCommentedFiles(t *testing.T) {
 	}
 }
 
-// TestDrawerCutsLongTrees pins that a drawer taller than the terminal is
-// cut with a marker instead of overflowing, so the status line stays
-// visible.
-func TestDrawerCutsLongTrees(t *testing.T) {
+// TestDrawerScrollsLongTrees pins that a drawer taller than the
+// terminal scrolls with the selection instead of overflowing, so the
+// status line stays visible.
+func TestDrawerScrollsLongTrees(t *testing.T) {
 	var many []diff.ReviewFile
 	for i := 0; i < 12; i++ {
 		many = append(many, diff.New(fmt.Sprintf("dir%d/f.go", i), "", "package f\n"))
 	}
-	m := start(ui.New(many, "main", themeFor, ui.Options{}), 40, 5)
+	m := start(ui.New(many, "main", themeFor, ui.Options{}), 40, 8)
 
 	m = press(leader(m), "d")
 	s := screen(m)
-
-	if !strings.Contains(s, "…") {
-		t.Errorf("drawer lacks the cut marker:\n%s", s)
+	if !strings.Contains(s, "of 24") {
+		t.Errorf("drawer lacks the range in the title:\n%s", s)
 	}
-	// The status line stays on the last row.
 	if !strings.Contains(s, "dir0/f.go  1/12") {
-		t.Errorf("status line missing below the cut drawer:\n%s", s)
+		t.Errorf("status line missing below the drawer:\n%s", s)
 	}
-	// Files beyond the cut are not shown.
-	if strings.Contains(s, "dir11") {
-		t.Errorf("drawer shows files beyond the cut:\n%s", s)
+	if strings.Contains(s, "dir9/") {
+		t.Errorf("drawer shows files beyond the window:\n%s", s)
+	}
+
+	for i := 0; i < 11; i++ {
+		m = press(m, "j")
+	}
+	s = screen(m)
+	if !strings.Contains(s, "dir9/") {
+		t.Errorf("drawer did not scroll to the selection:\n%s", s)
+	}
+	if strings.Contains(s, "dir1/") {
+		t.Errorf("drawer still shows the first rows:\n%s", s)
 	}
 }
