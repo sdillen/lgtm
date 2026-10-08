@@ -201,6 +201,22 @@ func TestStatusLineSqueezesOnNarrowTerminals(t *testing.T) {
 	}
 }
 
+// TestStatusLineNamesTheReviewRange pins the review range at the start
+// of the status line and that it gives way before the path does.
+func TestStatusLineNamesTheReviewRange(t *testing.T) {
+	last := func(width int) string {
+		m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{Base: "main", Branch: "feat/wow"}), width, 5)
+		rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+		return strings.TrimRight(rows[len(rows)-1], " ")
+	}
+	if got := last(100); !strings.HasPrefix(got, "main → feat/wow  main.go  1/1") {
+		t.Errorf("width 100: %q, want the range before the path", got)
+	}
+	if got := last(30); strings.Contains(got, "feat/wow") || !strings.HasPrefix(got, "main.go  1/1") {
+		t.Errorf("width 30: %q, want the full path without the range", got)
+	}
+}
+
 // TestStatusLineShowsProgressAndBadges pins the progress bar of read
 // files and the open comments as badges per category.
 func TestStatusLineShowsProgressAndBadges(t *testing.T) {
