@@ -88,7 +88,7 @@ func TestDefaultDarkThemeIsTokyoNightNight(t *testing.T) {
 		col  color.Color
 		want string // expected rgb triplet
 	}{
-		{"cursor", th.Styles.Cursor, "47;51;77"},                 // #2f334d
+		{"cursor", th.Styles.Cursor, "41;46;66"},                 // #292e42
 		{"added_bg", th.Styles.AddedBG, "31;46;36"},              // #1f2e24
 		{"deleted_bg", th.Styles.DeletedBG, "50;33;41"},          // #322129
 		{"word_added_bg", th.Styles.WordAddedBG, "65;86;42"},     // #41562a
@@ -114,8 +114,8 @@ func TestDefaultLightThemeIsTokyoNightDay(t *testing.T) {
 	if got := styleFG(th.Styles.Added); !strings.Contains(got, "88;117;57") {
 		t.Errorf("added renders %q, want the day green #587539", got)
 	}
-	if got := styleFG(th.Styles.Deleted); !strings.Contains(got, "224;75;75") {
-		t.Errorf("deleted renders %q, want the day red #e04b4b", got)
+	if got := styleFG(th.Styles.Deleted); !strings.Contains(got, "245;42;101") {
+		t.Errorf("deleted renders %q, want the day red #f52a65", got)
 	}
 }
 

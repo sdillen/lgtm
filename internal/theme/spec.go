@@ -23,7 +23,7 @@ import (
 //	bg = "#1a1b26"      # background (reserved for future views)
 //	dim = "#565f89"     # gutters, fold markers, hunk headers
 //	accent = "#7aa2f7"  # status line
-//	cursor = "#2f334d"  # cursor row background
+//	cursor = "#292e42"  # cursor row background
 //	border = "#3b4261"  # overlay borders (reserved for future views)
 //
 //	[diff]
@@ -220,18 +220,18 @@ func builtinSpec(kind Kind) Spec {
 			Diff: DiffSpec{
 				Added:         "#587539",
 				AddedBG:       "#e6efe3",
-				Deleted:       "#e04b4b",
+				Deleted:       "#f52a65",
 				DeletedBG:     "#f4e3e3",
 				WordAddedBG:   "#c5d8b5",
 				WordDeletedBG: "#e7c4c4",
 			},
 			Comment: CommentSpec{
-				Must:     "#e04b4b",
+				Must:     "#f52a65",
 				Should:   "#b5881f",
 				Nit:      "#007197",
 				Question: "#587539",
 			},
-			Syntax: SyntaxSpec{Base: "tokyonight-day"},
+			Syntax: SyntaxSpec{Base: "tokyonight-day", Overrides: commentOverrides("#848cb5")},
 		}
 	}
 	return Spec{
@@ -241,7 +241,7 @@ func builtinSpec(kind Kind) Spec {
 			BG:     "#1a1b26",
 			Dim:    "#565f89",
 			Accent: "#7aa2f7",
-			Cursor: "#2f334d",
+			Cursor: "#292e42",
 			Border: "#3b4261",
 		},
 		Diff: DiffSpec{
@@ -258,8 +258,18 @@ func builtinSpec(kind Kind) Spec {
 			Nit:      "#7dcfff",
 			Question: "#9ece6a",
 		},
-		Syntax: SyntaxSpec{Base: "tokyonight-night"},
+		Syntax: SyntaxSpec{Base: "tokyonight-night", Overrides: commentOverrides("#565f89")},
 	}
+}
+
+// commentOverrides lifts the comment colours of the chroma tokyonight styles,
+// which use the too dark terminal-black, to the official comment colour.
+func commentOverrides(fg string) map[string]Override {
+	o := map[string]Override{}
+	for _, n := range []string{"Comment", "CommentSingle", "CommentMultiline", "CommentSpecial", "CommentHashbang", "CommentPreproc", "LiteralStringDoc", "LiteralStringHeredoc"} {
+		o[n] = Override{FG: fg}
+	}
+	return o
 }
 
 // Spec returns the raw theme spec the theme was resolved from, e.g. to
@@ -334,6 +344,8 @@ func merge(dst, src *Spec) {
 	mergeStr(&dst.Comment.Question, src.Comment.Question)
 	if src.Syntax.Base != "" {
 		dst.Syntax.Base = src.Syntax.Base
+		// The built-in overrides belong to the built-in base.
+		dst.Syntax.Overrides = nil
 	}
 	if len(src.Syntax.Overrides) > 0 {
 		dst.Syntax.Overrides = src.Syntax.Overrides

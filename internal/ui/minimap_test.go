@@ -80,7 +80,7 @@ func TestMinimapShowsThePosition(t *testing.T) {
 
 	// The window starts at the top: the first strip cell carries the
 	// cursor background, at the end of the first screen row.
-	if !endsWithCell(m.View().Content, "line 001", "48;2;47;51;77") {
+	if !endsWithCell(m.View().Content, "line 001", "48;2;41;46;66") {
 		t.Errorf("minimap lacks the position block at the top:\n%s", screen(m))
 	}
 
@@ -88,7 +88,7 @@ func TestMinimapShowsThePosition(t *testing.T) {
 	// starts at line 031, so the cell of screen row 3 (line 034)
 	// carries the position.
 	m = press(m, "4", "0", "G")
-	if !endsWithCell(m.View().Content, "line 034", "48;2;47;51;77") {
+	if !endsWithCell(m.View().Content, "line 034", "48;2;41;46;66") {
 		t.Errorf("minimap lacks the position block after the jump:\n%s", screen(m))
 	}
 }

@@ -76,7 +76,7 @@ func TestStreamKeepsMultilineTokensAcrossPulls(t *testing.T) {
 	}
 	// Both pulled lines are comment-coloured, like the whole-text
 	// highlight of the same source.
-	want := "65;72;104" // CommentSingle #414868 in the night theme
+	want := "86;95;137" // CommentSingle #565f89 in the night theme
 	for i, line := range comment {
 		if got := renderLine(line); !strings.Contains(got, want) {
 			t.Errorf("comment line %d renders %q, want the comment colour", i+1, got)
@@ -108,7 +108,7 @@ func TestHighlightColoursTokensByType(t *testing.T) {
 		want string // rgb triplet of the token colour
 	}{
 		{0, "125;207;255"}, // package: KeywordNamespace #7dcfff
-		{2, "65;72;104"},   // comment: CommentSingle #414868
+		{2, "86;95;137"},   // comment: CommentSingle #565f89
 		{3, "157;124;216"}, // func: KeywordDeclaration #9d7cd8
 		{4, "187;154;247"}, // return: Keyword #bb9af7
 	}
@@ -135,7 +135,7 @@ func TestHighlightMultiLineTokensSpanLines(t *testing.T) {
 	}
 	// Both lines of the block comment are comment-coloured.
 	for i := 0; i < 2; i++ {
-		if got := renderLine(lines[i]); !strings.Contains(got, "65;72;104") {
+		if got := renderLine(lines[i]); !strings.Contains(got, "86;95;137") {
 			t.Errorf("line %d renders %q, want the comment colour", i, got)
 		}
 	}
@@ -162,9 +162,9 @@ func TestHighlightDimDimsDeletedLines(t *testing.T) {
 	th := theme.Default(theme.KindDark)
 	lines := th.Highlighter.HighlightDim("main.go", goSrc)
 
-	// The comment is dimmed: #414868 with 55% brightness.
-	if got := renderLine(lines[2]); !strings.Contains(got, "38;2;35;39;57") {
-		t.Errorf("dimmed comment renders %q, want the dimmed #232739", got)
+	// The comment is dimmed: #565f89 with 55% brightness.
+	if got := renderLine(lines[2]); !strings.Contains(got, "38;2;47;52;75") {
+		t.Errorf("dimmed comment renders %q, want the dimmed #2f344b", got)
 	}
 	// The keyword is dimmed: #bb9af7 with 55% brightness.
 	if got := renderLine(lines[4]); !strings.Contains(got, "38;2;102;84;135") {
