@@ -592,6 +592,8 @@ func (m Model) contextView() string {
 			if j := m.offset + i; j < len(m.context.lines) {
 				row := ansi.Truncate(ansi.TruncateLeft(m.renderContextLine(j, j == m.cursor), m.hscroll, ""), width, "")
 				b.WriteString(m.padCursor(row, width, j == m.cursor))
+			} else {
+				b.WriteString(m.padCursor("", width, false))
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')

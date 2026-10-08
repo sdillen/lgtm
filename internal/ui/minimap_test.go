@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
 )
@@ -116,6 +118,27 @@ func TestMinimapToggle(t *testing.T) {
 	m = press(m, "enter")
 	if endsWithCell(m.View().Content, "ine 001", cursorBG) {
 		t.Errorf(":set nominimap did not hide the minimap:\n%s", screen(m))
+	}
+}
+
+// TestMinimapSitsInTheLastColumn pins that the strip is one straight
+// line at the right edge: every row of the file area, also short and
+// empty ones and the rows below the last line, is as wide as the
+// terminal, with and without wrap.
+func TestMinimapSitsInTheLastColumn(t *testing.T) {
+	short := diff.New("short.txt", "a\nb\n", "a\nc\n")
+	for _, wrap := range []bool{false, true} {
+		m := start(ui.New([]diff.ReviewFile{short}, "main", themeFor, ui.Options{}), 40, 11)
+		if wrap {
+			m = typeText(press(m, ":"), "set wrap")
+			m = press(m, "enter")
+		}
+		lines := strings.Split(m.View().Content, "\n")
+		for i, l := range lines[:10] {
+			if w := ansi.StringWidth(l); w != 40 {
+				t.Errorf("wrap=%v: row %d is %d cells wide, want 40:\n%s", wrap, i, w, screen(m))
+			}
+		}
 	}
 }
 

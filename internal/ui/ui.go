@@ -1162,6 +1162,8 @@ func (m Model) fileView() string {
 				hl := j == m.cursor || (r.note == nil && r.header == "" && m.selected(r.line))
 				row := ansi.Truncate(ansi.TruncateLeft(m.renderRow(r, hl), m.hscroll, ""), width, "")
 				b.WriteString(m.padCursor(row, width, hl))
+			} else {
+				b.WriteString(m.padCursor("", width, false))
 			}
 			b.WriteString(m.minimapCell(strip, i))
 			b.WriteByte('\n')
@@ -1201,14 +1203,19 @@ func (m Model) fileView() string {
 
 // padCursor fills a highlighted row up to width with the cursor
 // background, so the cursor reads as a bar and stays visible on short
-// and empty lines.
+// and empty lines. With the minimap on every row is filled up to width,
+// with plain spaces when it is not highlighted, so the strip cell
+// behind it sits in the last column.
 func (m Model) padCursor(row string, width int, hl bool) string {
-	if !hl {
+	if !hl && !m.minimapOn() {
 		return row
 	}
 	pad := width - ansi.StringWidth(row)
 	if pad <= 0 {
 		return row
+	}
+	if !hl {
+		return row + strings.Repeat(" ", pad)
 	}
 	return row + lipgloss.NewStyle().Background(m.theme.Styles.Cursor).Render(strings.Repeat(" ", pad))
 }
@@ -1246,6 +1253,13 @@ func (m Model) renderWrapped(b *strings.Builder, width, rows int, render func(in
 			b.WriteByte('\n')
 			out++
 		}
+	}
+	// The strip runs down the whole file area, also beside the empty
+	// rows below the last line.
+	for ; cells != nil && m.minimapOn() && out < m.bodyHeight(); out++ {
+		b.WriteString(m.padCursor("", width, false))
+		b.WriteString(m.minimapCell(cells, out))
+		b.WriteByte('\n')
 	}
 }
 
