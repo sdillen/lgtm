@@ -57,6 +57,8 @@ func Mix(a, b Styles, t float64) Styles {
 		Gutter:          mixStyle(a.Gutter, b.Gutter, t),
 		Fold:            mixStyle(a.Fold, b.Fold, t),
 		Hunk:            mixStyle(a.Hunk, b.Hunk, t),
+		Purple:          mixStyle(a.Purple, b.Purple, t),
+		Orange:          mixStyle(a.Orange, b.Orange, t),
 		Cursor:          c(a.Cursor, b.Cursor),
 		Added:           mixStyle(a.Added, b.Added, t),
 		Deleted:         mixStyle(a.Deleted, b.Deleted, t),

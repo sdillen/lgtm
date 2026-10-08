@@ -19,6 +19,9 @@ type Styles struct {
 	Fold lipgloss.Style
 	// Hunk is the unified view section header.
 	Hunk lipgloss.Style
+	// Purple and Orange are accent colours for telling elements apart.
+	Purple lipgloss.Style
+	Orange lipgloss.Style
 	// Cursor is the background of the cursor row.
 	Cursor color.Color
 
@@ -46,6 +49,7 @@ type Styles struct {
 // colour is unset (the profile cannot show it).
 type palette struct {
 	status, gutter, fold, hunk, cursor color.Color
+	purple, orange                     color.Color
 	added, addedBG, deleted, deletedBG color.Color
 	wordAddedBG, wordDeletedBG         color.Color
 	must, should, nit, question        color.Color
@@ -72,6 +76,8 @@ func buildPalette(spec Spec, profile colorprofile.Profile) (palette, error) {
 		func() error { return parse(&p.fold, spec.UI.Dim) },
 		func() error { return parse(&p.hunk, spec.UI.Dim) },
 		func() error { return parse(&p.cursor, spec.UI.Cursor) },
+		func() error { return parse(&p.purple, spec.UI.Purple) },
+		func() error { return parse(&p.orange, spec.UI.Orange) },
 		func() error { return parse(&p.added, spec.Diff.Added) },
 		func() error { return parse(&p.addedBG, spec.Diff.AddedBG) },
 		func() error { return parse(&p.deleted, spec.Diff.Deleted) },
@@ -97,6 +103,8 @@ func buildStyles(p palette) Styles {
 		Gutter:          fgStyle(p.gutter),
 		Fold:            fgStyle(p.fold),
 		Hunk:            fgStyle(p.hunk),
+		Purple:          fgStyle(p.purple),
+		Orange:          fgStyle(p.orange),
 		Cursor:          p.cursor,
 		Added:           fgStyle(p.added),
 		Deleted:         fgStyle(p.deleted),

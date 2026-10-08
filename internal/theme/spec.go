@@ -25,6 +25,8 @@ import (
 //	accent = "#7aa2f7"  # status line
 //	cursor = "#364a82"  # cursor row background
 //	border = "#3b4261"  # overlay borders (reserved for future views)
+//	purple = "#bb9af7"  # accent for telling elements apart
+//	orange = "#ff9e64"  # accent for telling elements apart
 //
 //	[diff]
 //	added = "#9ece6a"        # the " + " marker
@@ -69,6 +71,10 @@ type UISpec struct {
 	Accent string `toml:"accent"`
 	Cursor string `toml:"cursor"`
 	Border string `toml:"border"`
+	// Purple and Orange are accent colours for elements that need to be
+	// told apart, e.g. the names in the status line.
+	Purple string `toml:"purple"`
+	Orange string `toml:"orange"`
 }
 
 // DiffSpec is the diff token set: the fg of the +/- markers, the background
@@ -216,6 +222,8 @@ func builtinSpec(kind Kind) Spec {
 				Accent: "#2e7de9",
 				Cursor: "#b7c1e3",
 				Border: "#b7c1e3",
+				Purple: "#9854f1",
+				Orange: "#b15c00",
 			},
 			Diff: DiffSpec{
 				Added:         "#587539",
@@ -243,6 +251,8 @@ func builtinSpec(kind Kind) Spec {
 			Accent: "#7aa2f7",
 			Cursor: "#364a82",
 			Border: "#3b4261",
+			Purple: "#bb9af7",
+			Orange: "#ff9e64",
 		},
 		Diff: DiffSpec{
 			Added:         "#9ece6a",
@@ -332,6 +342,8 @@ func merge(dst, src *Spec) {
 	mergeStr(&dst.UI.Accent, src.UI.Accent)
 	mergeStr(&dst.UI.Cursor, src.UI.Cursor)
 	mergeStr(&dst.UI.Border, src.UI.Border)
+	mergeStr(&dst.UI.Purple, src.UI.Purple)
+	mergeStr(&dst.UI.Orange, src.UI.Orange)
 	mergeStr(&dst.Diff.Added, src.Diff.Added)
 	mergeStr(&dst.Diff.AddedBG, src.Diff.AddedBG)
 	mergeStr(&dst.Diff.Deleted, src.Diff.Deleted)

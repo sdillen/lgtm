@@ -161,6 +161,10 @@ Action names are the ones listed in the help (`?`), e.g. `down`, `next-hunk`, `t
 # ~/.config/lgtm/themes/my-theme.toml
 name = "my-theme"
 
+[ui]
+purple = "#bb9af7"            # accents that tell elements apart
+orange = "#ff9e64"
+
 [comment]
 must = "#f7768e"
 nit = "#7dcfff"
