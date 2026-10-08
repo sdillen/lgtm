@@ -108,7 +108,7 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 61. Als Reviewer möchte ich Kommentare in einem Inline-Float mit minimalen vim-Bindings schreiben, damit ich im Lesefluss bleibe.
 62. Als Reviewer möchte ich mit `<C-s>` speichern und mit `<Esc><Esc>` verwerfen, damit das Schreiben schnell geht.
 63. Als Reviewer möchte ich Kommentare inline als virtuelle Zeilen unter dem Code sehen, in der Farbe ihrer Kategorie, damit ich sie im Kontext lese.
-64. Als Reviewer möchte ich einen Kommentar unter dem Cursor mit `c` bearbeiten, mit `dd` (nach Bestätigung) löschen und mit `x` als erledigt markieren, damit ich ihn pflegen kann.
+64. Als Reviewer möchte ich einen Kommentar unter dem Cursor mit `c` bearbeiten, mit `dd` (nach Bestätigung) löschen und mit `x` als erledigt markieren, damit ich ihn pflegen kann. Erledigte Kommentare sind gedimmt, durchgestrichen und mit `✓` markiert, damit ich sie auf einen Blick von offenen unterscheide; die Statuszeile zählt sie (`x/y erledigt`).
 
 ### Export zum Agenten
 
@@ -122,7 +122,7 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 72. Als Reviewer möchte ich das eingebaute Default-Template ausgeben lassen, damit ich einen Startpunkt für eigene Templates habe.
 73. Als Reviewer möchte ich, dass `must`-Kommentare im Prompt zuerst kommen und `question` als „nur beantworten, nichts ändern“ markiert ist, damit der Agent richtig priorisiert.
 74. Als Reviewer möchte ich beim Beenden mit offenen Kommentaren einen Hinweis bekommen („3 offene Kommentare – `Y` kopieren?“), damit ich das Kopieren nicht vergesse.
-75. Als Reviewer möchte ich mit `:lgtm` approven, einen kurzen Bestätigungsmoment sehen und `lgtm` mit Exit-Code 0 beenden, damit Skripte und Agenten erkennen, dass das Review bestanden ist.
+75. Als Reviewer möchte ich mit `:lgtm` approven, einen kurzen Bestätigungsmoment sehen und `lgtm` mit Exit-Code 0 beenden, damit Skripte und Agenten erkennen, dass das Review bestanden ist. Nach dem Bestätigungsmoment wird der Review-Zustand wie bei `lgtm clear` gelöscht (`.lgtm/`, `refs/lgtm/`), damit das nächste Review frisch beginnt. Bei offenen Kommentaren fragt `:lgtm` zuerst nach („N offene Kommentare werden verworfen“); erst das zweite `:lgtm` approved.
 76. Als Agenten-Workflow möchte ich einen Exit-Code ungleich 0 bekommen, wenn beim Beenden offene Kommentare existieren, damit ich weiß, dass nachgebessert werden muss.
 
 ### Review-Runden und Interdiff
@@ -130,7 +130,7 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 77. Als Reviewer möchte ich, dass `lgtm` beim Review den reviewten Stand als Snapshot festhält, damit spätere Runden darauf aufbauen können.
 78. Als Reviewer möchte ich in einer neuen Runde auf eine Interdiff-Ansicht umschalten, die nur Änderungen seit meinem letzten Review zeigt, damit ich nicht alles erneut lesen muss.
 79. Als Reviewer möchte ich zwischen Gesamt-Diff und Interdiff hin- und herschalten, damit ich bei Bedarf den Gesamtkontext sehe.
-80. Als Reviewer möchte ich Kommentare der vorherigen Runde gedimmt sehen und als erledigt markieren können, damit ich prüfen kann, ob der Agent sie umgesetzt hat.
+80. Als Reviewer möchte ich Kommentare der vorherigen Runde mit `Runde N ·` gekennzeichnet in ihrer Kategoriefarbe sehen und als erledigt markieren können, damit ich prüfen kann, ob der Agent sie umgesetzt hat. Erst erledigte Kommentare werden gedimmt, durchgestrichen und mit `✓` dargestellt.
 81. Als Reviewer möchte ich, dass nur offene Kommentare exportiert werden, damit der Agent keine erledigten Punkte erneut bearbeitet.
 82. Als Reviewer möchte ich `lgtm` jederzeit schließen und später an derselben Stelle weiterreviewen, damit ich Reviews unterbrechen kann.
 

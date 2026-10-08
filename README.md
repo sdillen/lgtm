@@ -47,8 +47,8 @@ Typical agent loop:
 1. The agent changes code (possibly in its own worktree).
 2. You run `lgtm`, read, and press `c` to comment.
 3. Press `Y` to copy all open comments as a prompt and paste it into the agent session. The agent can also read `.lgtm/review.md` directly.
-4. After the agent has worked, run `lgtm` again and press `<space>i` to see only the interdiff since your last review.
-5. Happy? Run `:lgtm` to approve.
+4. After the agent has worked, run `lgtm` again and press `<space>i` to see only the interdiff since your last review. Comments of the earlier round keep their colour and are labelled `Runde N ·`; tick off what the agent did with `x`. Done comments are dimmed, struck through and marked `✓`, and the status line counts them (`1/2 erledigt`).
+5. Happy? Run `:lgtm` to approve. This ends the review and clears its state (`.lgtm/` and the snapshot refs, like `lgtm clear`), so the next run starts a fresh review. With open comments `:lgtm` asks first ("N offene Kommentare werden verworfen"); run it again to confirm.
 
 ## Key bindings
 
@@ -105,7 +105,7 @@ In the comment float: `<Tab>` cycles the category (`must` → `should` → `nit`
 
 | Command | Effect |
 | --- | --- |
-| `:lgtm` | approve the review and exit with code 0 |
+| `:lgtm` | approve the review, clear its state and exit with code 0 (asks first with open comments) |
 | `:q` / `:q!` | quit (warns about open comments) / quit anyway |
 | `:theme [name]` | switch theme |
 | `:set <option>` | vim-style options `unified`, `sidebar`, `wrap`, `ignorews`: `:set wrap` on, `:set nowrap` off, `:set wrap!` toggle, `:set wrap?` query |
