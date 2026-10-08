@@ -10,6 +10,9 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -86,6 +89,21 @@ func Load(name, dir string, profile colorprofile.Profile) (Theme, error) {
 	}
 	return Theme{}, fmt.Errorf("theme %q not found (looked in %s and in the built-in themes)",
 		name, filepath.Join(dir, "themes"))
+}
+
+// Names lists the themes Load finds, sorted and without duplicates: the
+// built-in ones and <dir>/themes/*.toml.
+func Names(dir string) []string {
+	var names []string
+	for _, spec := range builtinSpecs() {
+		names = append(names, spec.Name)
+	}
+	custom, _ := filepath.Glob(filepath.Join(dir, "themes", "*.toml"))
+	for _, path := range custom {
+		names = append(names, strings.TrimSuffix(filepath.Base(path), ".toml"))
+	}
+	sort.Strings(names)
+	return slices.Compact(names)
 }
 
 // loadCustom reads <dir>/themes/<name>.toml. It reports ok=false when the

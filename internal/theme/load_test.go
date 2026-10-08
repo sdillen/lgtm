@@ -193,3 +193,23 @@ accent = "#ff0000"
 			styleFG(again.Styles.Status), styleFG(th.Styles.Status))
 	}
 }
+
+func TestNamesListsBuiltInAndCustomThemes(t *testing.T) {
+	dir := t.TempDir()
+	writeTheme(t, dir, "paper", "[ui]\n")
+	writeTheme(t, dir, "tokyo-night-day", "[ui]\n") // shadows a built-in
+
+	got := strings.Join(theme.Names(dir), " ")
+
+	if want := "paper tokyo-night-day tokyo-night-night"; got != want {
+		t.Errorf("Names = %q, want %q", got, want)
+	}
+}
+
+func TestNamesWithoutConfigDirListsTheBuiltInThemes(t *testing.T) {
+	got := strings.Join(theme.Names(filepath.Join(t.TempDir(), "missing")), " ")
+
+	if want := "tokyo-night-day tokyo-night-night"; got != want {
+		t.Errorf("Names = %q, want %q", got, want)
+	}
+}
