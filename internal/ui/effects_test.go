@@ -117,7 +117,7 @@ func TestApprovalShimmers(t *testing.T) {
 	if b := m.View().Content; a == b {
 		t.Error("the approval gradient does not move")
 	}
-	if !strings.Contains(ansi.Strip(m.View().Content), "✓ LGTM") {
+	if !strings.Contains(ansi.Strip(m.View().Content), "✓ Looks Good To Me") {
 		t.Error("shimmer lost the LGTM text")
 	}
 }

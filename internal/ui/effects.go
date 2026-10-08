@@ -179,14 +179,14 @@ func gradientText(s string, offset int, bold bool, stops []color.Color) string {
 	return b.String()
 }
 
-// lgtmBox is the confirmation moment of :lgtm: a "✓ LGTM" whose
+// lgtmBox is the confirmation moment of :lgtm: a "✓ Looks Good To Me" whose
 // gradient shimmers inside a border that runs through the same
 // colours.
 func (m Model) lgtmBox() string {
 	stops := m.approveAccents()
 	body := strings.Join([]string{
 		"",
-		gradientText("✓ LGTM", m.shimmer, true, stops),
+		gradientText("✓ Looks Good To Me", m.shimmer, true, stops),
 		"",
 		m.theme.Styles.Fold.Render("review approved"),
 	}, "\n")

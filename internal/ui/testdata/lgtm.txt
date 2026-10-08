@@ -1,10 +1,10 @@
    1    1   package main
-   2      - old     ╭─────────────────╮
-        2 + new     │                 │
-   3    3   end     │ ✓ LGTM          │
-                    │                 │
-                    │ review approved │
-                    ╰─────────────────╯
+   2      - old    ╭────────────────────╮
+        2 + new    │                    │
+   3    3   end    │ ✓ Looks Good To Me │
+                   │                    │
+                   │ review approved    │
+                   ╰────────────────────╯
 
 
 lgtm – approved
