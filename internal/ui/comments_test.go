@@ -412,8 +412,8 @@ func TestXMarksACommentAsDone(t *testing.T) {
 	if row == "" {
 		t.Fatalf("done comment no longer shown inline:\n%s", screen(m))
 	}
-	// The dim fold colour #565f89 replaces the should colour #e0af68.
-	if !strings.Contains(row, "38;2;86;95;137") || strings.Contains(row, "38;2;224;175;104") {
+	// The dim fold colour #51597d replaces the should colour #e0af68.
+	if !strings.Contains(row, "38;2;81;89;125") || strings.Contains(row, "38;2;224;175;104") {
 		t.Errorf("done comment not dimmed: %q", row)
 	}
 }

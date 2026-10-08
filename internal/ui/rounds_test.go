@@ -128,8 +128,8 @@ func TestCommentsOfEarlierRoundsAreDimmedAndCanBeTickedOff(t *testing.T) {
 	if !strings.Contains(row, "Runde 1") {
 		t.Errorf("comment of round 1 does not name its round: %q", row)
 	}
-	// The dim fold colour #565f89 replaces the must colour.
-	if !strings.Contains(row, "38;2;86;95;137") {
+	// The dim fold colour #51597d replaces the must colour.
+	if !strings.Contains(row, "38;2;81;89;125") {
 		t.Errorf("comment of round 1 is not dimmed: %q", row)
 	}
 

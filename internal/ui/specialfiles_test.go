@@ -173,15 +173,15 @@ func TestNewFileHasNoBackgroundWash(t *testing.T) {
 	added := diff.New("new.go", "", "package main\n")
 	m := start(ui.New([]diff.ReviewFile{added}, "main", themeFor, ui.Options{}), 30, 5)
 
-	// #1f2e24 is the added wash of the night theme: the ANSI background
+	// #1f2c38 is the added wash of the night theme: the ANSI background
 	// sequence must not appear in a new file.
-	if strings.Contains(m.View().Content, "48;2;31;46;36") {
+	if strings.Contains(m.View().Content, "48;2;31;44;56") {
 		t.Errorf("new file carries the added background wash:\n%s", m.View().Content)
 	}
 
 	changed := diff.New("f.go", "package main\n", "package main2\n")
 	m = start(ui.New([]diff.ReviewFile{changed}, "main", themeFor, ui.Options{}), 30, 5)
-	if !strings.Contains(m.View().Content, "48;2;31;46;36") {
+	if !strings.Contains(m.View().Content, "48;2;31;44;56") {
 		t.Errorf("changed file lost the added background wash:\n%s", m.View().Content)
 	}
 }

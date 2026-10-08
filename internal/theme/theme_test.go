@@ -65,9 +65,9 @@ func TestDefaultDarkThemeIsTokyoNightNight(t *testing.T) {
 		want  string // expected rgb triplet
 	}{
 		{"status", th.Styles.Status, "122;162;247"},   // accent #7aa2f7
-		{"gutter", th.Styles.Gutter, "86;95;137"},     // dim #565f89
-		{"fold", th.Styles.Fold, "86;95;137"},         // dim #565f89
-		{"hunk", th.Styles.Hunk, "86;95;137"},         // dim #565f89
+		{"gutter", th.Styles.Gutter, "81;89;125"},     // dim #51597d
+		{"fold", th.Styles.Fold, "81;89;125"},         // dim #51597d
+		{"hunk", th.Styles.Hunk, "81;89;125"},         // dim #51597d
 		{"added", th.Styles.Added, "158;206;106"},     // #9ece6a
 		{"deleted", th.Styles.Deleted, "247;118;142"}, // #f7768e
 		{"must", th.Styles.CommentMust, "247;118;142"},
@@ -88,9 +88,9 @@ func TestDefaultDarkThemeIsTokyoNightNight(t *testing.T) {
 		col  color.Color
 		want string // expected rgb triplet
 	}{
-		{"cursor", th.Styles.Cursor, "41;46;66"},                 // #292e42
-		{"added_bg", th.Styles.AddedBG, "31;46;36"},              // #1f2e24
-		{"deleted_bg", th.Styles.DeletedBG, "50;33;41"},          // #322129
+		{"cursor", th.Styles.Cursor, "43;47;65"},                 // #2b2f41
+		{"added_bg", th.Styles.AddedBG, "31;44;56"},              // #1f2c38
+		{"deleted_bg", th.Styles.DeletedBG, "52;33;43"},          // #34212b
 		{"word_added_bg", th.Styles.WordAddedBG, "65;86;42"},     // #41562a
 		{"word_deleted_bg", th.Styles.WordDeletedBG, "99;48;47"}, // #63302f
 	}

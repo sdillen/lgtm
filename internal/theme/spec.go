@@ -19,18 +19,18 @@ import (
 //	name = "my-theme"
 //
 //	[ui]
-//	fg = "#c0caf5"      # plain text (reserved for future views)
+//	fg = "#a9b1d6"      # plain text (reserved for future views)
 //	bg = "#1a1b26"      # background (reserved for future views)
-//	dim = "#565f89"     # gutters, fold markers, hunk headers
+//	dim = "#51597d"     # gutters, fold markers, hunk headers
 //	accent = "#7aa2f7"  # status line
-//	cursor = "#292e42"  # cursor row background
+//	cursor = "#2b2f41"  # cursor row background
 //	border = "#3b4261"  # overlay borders (reserved for future views)
 //
 //	[diff]
 //	added = "#9ece6a"        # the " + " marker
-//	added_bg = "#1f2e24"     # background wash of added lines
+//	added_bg = "#1f2c38"     # background wash of added lines
 //	deleted = "#f7768e"      # the " - " marker
-//	deleted_bg = "#322129"   # background wash of deleted lines
+//	deleted_bg = "#34212b"   # background wash of deleted lines
 //	word_added_bg = "#41562a"    # intra-line word highlight (added)
 //	word_deleted_bg = "#63302f"  # intra-line word highlight (deleted)
 //
@@ -45,7 +45,7 @@ import (
 //
 //	[syntax.overrides]
 //	Keyword = "#bb9af7"                       # a bare colour
-//	Comment = { fg = "#565f89", italic = true }  # or a table
+//	Comment = { fg = "#51597d", italic = true }  # or a table
 //
 // All colours are "#rrggbb" strings. A missing token falls back to the
 // built-in dark theme's value, so a custom theme may only override what it
@@ -237,18 +237,18 @@ func builtinSpec(kind Kind) Spec {
 	return Spec{
 		Name: "tokyo-night-night",
 		UI: UISpec{
-			FG:     "#c0caf5",
+			FG:     "#a9b1d6",
 			BG:     "#1a1b26",
-			Dim:    "#565f89",
+			Dim:    "#51597d",
 			Accent: "#7aa2f7",
-			Cursor: "#292e42",
+			Cursor: "#2b2f41",
 			Border: "#3b4261",
 		},
 		Diff: DiffSpec{
 			Added:         "#9ece6a",
-			AddedBG:       "#1f2e24",
+			AddedBG:       "#1f2c38",
 			Deleted:       "#f7768e",
-			DeletedBG:     "#322129",
+			DeletedBG:     "#34212b",
 			WordAddedBG:   "#41562a",
 			WordDeletedBG: "#63302f",
 		},
@@ -258,7 +258,7 @@ func builtinSpec(kind Kind) Spec {
 			Nit:      "#7dcfff",
 			Question: "#9ece6a",
 		},
-		Syntax: SyntaxSpec{Base: "tokyonight-night", Overrides: commentOverrides("#565f89")},
+		Syntax: SyntaxSpec{Base: "tokyonight-night", Overrides: commentOverrides("#51597d")},
 	}
 }
 
