@@ -142,6 +142,12 @@ func (m *Model) stepFade() {
 	}
 }
 
+// isUnset reports whether a theme colour is missing.
+func isUnset(c color.Color) bool {
+	_, none := c.(lipgloss.NoColor)
+	return c == nil || none
+}
+
 // approveAccents are the stops of the approval gradient.
 func (m Model) approveAccents() []color.Color {
 	st := m.theme.Styles

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -61,6 +62,27 @@ type dirStat struct {
 	deleted int
 }
 
+// heatBar is a distribution bar of fill cells out of barWidth. The
+// filled cells run through a ramp from calm to hot (added green via
+// should to must), so a long bar reaches further into the warm colours;
+// the empty cells stay dim.
+func (m Model) heatBar(fill int) string {
+	st := m.theme.Styles
+	ramp := lipgloss.Blend1D(barWidth,
+		st.Added.GetForeground(),
+		st.CommentShould.GetForeground(),
+		st.CommentMust.GetForeground())
+	var b strings.Builder
+	for i := range barWidth {
+		if i < fill {
+			b.WriteString(lipgloss.NewStyle().Foreground(ramp[i]).Render("█"))
+		} else {
+			b.WriteString(st.Fold.Render("░"))
+		}
+	}
+	return b.String()
+}
+
 // dirBars are the distribution bars of the review: one line per
 // directory, sorted by the size of the change, with a bar of the
 // share of the whole review and the +/− numbers.
@@ -110,7 +132,7 @@ func (m Model) dirBars() []string {
 	for _, s := range stats {
 		n := s.added + s.deleted
 		fill := (n*barWidth + total/2) / total
-		bar := strings.Repeat("█", fill) + strings.Repeat("░", barWidth-fill)
+		bar := m.heatBar(fill)
 		name := s.name + strings.Repeat(" ", w-ansi.StringWidth(s.name))
 		lines = append(lines, fmt.Sprintf("%s  %s  +%d −%d", name, bar, s.added, s.deleted))
 	}

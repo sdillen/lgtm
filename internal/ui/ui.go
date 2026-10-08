@@ -1270,7 +1270,19 @@ func (m Model) statusLine() string {
 	if hint := m.changeHint(); hint != "" {
 		parts = append(parts, hint)
 	}
-	return m.theme.Styles.Status.Render(strings.Join(parts, "  "))
+	return m.statusGradient(strings.Join(parts, "  "))
+}
+
+// statusGradient colours the status line text with a gradient from the
+// accent to the cyan of the nit category; the text itself is unchanged.
+// Without a colour for either end the plain accent style stays.
+func (m Model) statusGradient(text string) string {
+	st := m.theme.Styles
+	from, to := st.Status.GetForeground(), st.CommentNit.GetForeground()
+	if isUnset(from) || isUnset(to) {
+		return st.Status.Render(text)
+	}
+	return gradientText(text, 0, false, []color.Color{from, to})
 }
 
 // renderRow renders one row of the current file, highlighting the cursor.

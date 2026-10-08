@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -118,5 +119,46 @@ func TestApprovalShimmers(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(m.View().Content), "✓ LGTM") {
 		t.Error("shimmer lost the LGTM text")
+	}
+}
+
+// colours counts the distinct truecolour foregrounds in rendered text.
+func colours(s string) int {
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile(`\x1b\[[0-9;]*38;2;(\d+;\d+;\d+)`).FindAllStringSubmatch(s, -1) {
+		seen[m[1]] = true
+	}
+	return len(seen)
+}
+
+// TestStatusLineRunsThroughAGradient pins that the status line is
+// coloured along a gradient while its text stays the same.
+func TestStatusLineRunsThroughAGradient(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 60, 6)
+	rows := strings.Split(m.View().Content, "\n")
+	last := rows[len(rows)-1]
+	if got := ansi.Strip(last); !strings.Contains(got, "main.go  1/1  +1 −1") {
+		t.Errorf("status text changed: %q", got)
+	}
+	if n := colours(last); n < 5 {
+		t.Errorf("status line has %d distinct colours, want a gradient", n)
+	}
+}
+
+// TestStartScreenBarsHeatUp pins the heat ramp of the distribution
+// bars: a filled bar spans several colours, not one flat fill.
+func TestStartScreenBarsHeatUp(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{StartScreen: true}), 60, 12)
+	var bar string
+	for _, l := range strings.Split(m.View().Content, "\n") {
+		if strings.Contains(l, "█") {
+			bar = l
+		}
+	}
+	if bar == "" {
+		t.Fatal("no distribution bar on the start screen")
+	}
+	if n := colours(bar); n < 3 {
+		t.Errorf("bar has %d colours, want a ramp", n)
 	}
 }
