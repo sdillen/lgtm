@@ -11,3 +11,6 @@ devenv.local.yaml
 
 # build output
 /lgtm
+
+# benchmark results and profiles
+/.bench

@@ -46,6 +46,29 @@ in
     gofmt -l $(git ls-files -co --exclude-standard '*.go') && go vet ./...
   '';
 
+  # Benchmarks: `bench [pattern]` writes .bench/new.txt, `bench-compare`
+  # diffs it against .bench/old.txt (benchstat), `bench-baseline` promotes
+  # new to old, `bench-profile <pkg> <pattern>` writes CPU/alloc profiles.
+  scripts.bench.exec = ''
+    mkdir -p .bench
+    go test -run '^$' -bench "''${1:-.}" -benchmem -count 10 ./internal/... | tee .bench/new.txt
+  '';
+  scripts.bench-baseline.exec = ''
+    cp .bench/new.txt .bench/old.txt
+  '';
+  scripts.bench-compare.exec = ''
+    go run golang.org/x/perf/cmd/benchstat@latest .bench/old.txt .bench/new.txt
+  '';
+  scripts.bench-profile.exec = ''
+    mkdir -p .bench
+    pkg="''${1:?usage: bench-profile <pkg, e.g. ./internal/ui> <pattern>}"
+    go test -run '^$' -bench "''${2:?pattern}" -benchmem \
+      -cpuprofile .bench/cpu.out -memprofile .bench/mem.out \
+      -o .bench/test.bin "$pkg"
+    echo "go tool pprof -top .bench/test.bin .bench/cpu.out"
+    echo "go tool pprof -sample_index=alloc_space -top .bench/test.bin .bench/mem.out"
+  '';
+
   # https://devenv.sh/basics/
   enterShell = ''
     echo "Welcome to $GREET - Go $(go version | awk '{print $3}')"
