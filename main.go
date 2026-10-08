@@ -281,8 +281,9 @@ func run(dir string, args []string) (int, error) {
 		LoadTheme: func(name string) (theme.Theme, error) {
 			return theme.Load(name, cfgDir, profile)
 		},
-		State: state,
-		Dir:   stateDir,
+		ThemeNames: func() []string { return theme.Names(cfgDir) },
+		State:      state,
+		Dir:        stateDir,
 		// Approving ends the review for good.
 		Clear: func() error {
 			if state == nil {

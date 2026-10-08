@@ -12,12 +12,18 @@ import (
 // cmdlineKey edits the command line: text is inserted, <bs> deletes (and
 // leaves an empty line), <esc> cancels, <cr> runs the command.
 func (m Model) cmdlineKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if k := msg.String(); k != "tab" && k != "shift+tab" {
+		m.compCands = nil
+	}
 	switch msg.String() {
 	case "esc":
 		m.mode = modeNormal
 	case "enter":
 		m.mode = modeNormal
 		return m.execute(m.cmdline)
+	case "tab", "shift+tab":
+		m.complete(msg.String() == "shift+tab")
+		return m, nil
 	case "backspace":
 		if m.cmdline == "" {
 			m.mode = modeNormal
@@ -31,6 +37,33 @@ func (m Model) cmdlineKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// complete replaces the command line by its next (or, backwards,
+// previous) Tab completion. The candidates are fixed on the first Tab
+// and cycled until another key is typed.
+func (m *Model) complete(backwards bool) {
+	if m.compCands == nil {
+		var themes []string
+		if m.opts.ThemeNames != nil {
+			themes = m.opts.ThemeNames()
+		}
+		m.compCands = completions(m.cmdline, themes)
+		m.compIdx = -1
+		if backwards {
+			m.compIdx = 0
+		}
+	}
+	n := len(m.compCands)
+	if n == 0 {
+		return
+	}
+	step := 1
+	if backwards {
+		step = -1
+	}
+	m.compIdx = (m.compIdx + step + n) % n
+	m.cmdline = m.compCands[m.compIdx]
 }
 
 // execute runs a command line: :q, :q!, :lgtm, :theme [name] and :set

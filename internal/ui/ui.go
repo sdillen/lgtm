@@ -38,6 +38,9 @@ type Options struct {
 	// LoadTheme loads a theme by name for :theme; nil disables
 	// switching.
 	LoadTheme func(name string) (theme.Theme, error)
+	// ThemeNames lists the available theme names for Tab completion
+	// after :theme; nil disables it.
+	ThemeNames func() []string
 	// WhichKeyDelay is the wait before which-key appears; 0 means the
 	// default of 300ms.
 	WhichKeyDelay time.Duration
@@ -137,6 +140,8 @@ type Model struct {
 	whichKey   bool              // the which-key popup is shown
 	helpOffset int               // first visible line of the help
 	cmdline    string            // text of the command line
+	compCands  []string          // Tab completions being cycled; nil when not completing
+	compIdx    int               // index in compCands of the current command line
 	message    string            // command result, shown as a toast until the next key or its expiry
 	messageErr bool              // message is an error
 	messageAt  time.Time         // when the toast was shown, for its decay

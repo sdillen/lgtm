@@ -424,3 +424,61 @@ func TestCommandLineWorksWithoutChanges(t *testing.T) {
 		t.Fatalf(":q returned %T, want tea.QuitMsg", cmd())
 	}
 }
+
+func TestTabCompletesAUniqueCommand(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 3)
+
+	m = tab(typeText(press(m, ":"), "lg"))
+
+	if !strings.Contains(screen(m), ":lgtm") {
+		t.Errorf("Tab did not complete lg to lgtm:\n%s", screen(m))
+	}
+}
+
+func TestTabCompletesASetOption(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 3)
+
+	m = tab(typeText(press(m, ":"), "set igno"))
+	if !strings.Contains(screen(m), ":set ignorews") {
+		t.Errorf("Tab did not complete igno to ignorews:\n%s", screen(m))
+	}
+}
+
+func TestTabCompletesAThemeName(t *testing.T) {
+	opts := ui.Options{ThemeNames: func() []string { return []string{"solarized", "tokyo-night-day"} }}
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, opts), 40, 3)
+
+	m = tab(typeText(press(m, ":"), "theme tok"))
+
+	if !strings.Contains(screen(m), ":theme tokyo-night-day") {
+		t.Errorf("Tab did not complete tok to tokyo-night-day:\n%s", screen(m))
+	}
+}
+
+func TestTabCyclesThroughSeveralCompletions(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 3)
+
+	m = tab(typeText(press(m, ":"), "set no"))
+	if !strings.Contains(screen(m), ":set nounified") {
+		t.Fatalf("first Tab should offer nounified:\n%s", screen(m))
+	}
+	m = tab(m)
+	if !strings.Contains(screen(m), ":set nosidebar") {
+		t.Errorf("second Tab should offer nosidebar:\n%s", screen(m))
+	}
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !strings.Contains(screen(m), ":set nounified") {
+		t.Errorf("Shift+Tab should go back to nounified:\n%s", screen(m))
+	}
+}
+
+func TestTypingAfterTabStartsANewCompletion(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 40, 3)
+
+	m = tab(typeText(press(m, ":"), "set no")) // nounified
+	m = tab(typeText(m, "w"))                  // set nounifiedw: no match
+
+	if !strings.Contains(screen(m), ":set nounifiedw") {
+		t.Errorf("typing must discard the cycle:\n%s", screen(m))
+	}
+}
