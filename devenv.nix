@@ -22,7 +22,7 @@ let
     else
       builtins.substring 0 7 rev.value.rev;
 
-  lgtm = import ./package.nix { inherit pkgs lib commit; };
+  lgtm = import ./package.nix { inherit pkgs lib; gitCommit = commit; };
 in
 {
   # https://devenv.sh/basics/

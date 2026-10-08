@@ -1,11 +1,15 @@
 # The lgtm package: built with buildGoModule so `go install` and the Nix
 # build share one source of truth. Version and commit are embedded into
 # the binary via -ldflags; `lgtm --version` prints them.
+#
+# Note: the parameter is called `gitCommit`, NOT `commit` — `pkgs.commit`
+# exists in nixpkgs, so callPackage would auto-inject that package into a
+# `commit` parameter and the store path would end up in the ldflags.
 {
   pkgs,
   lib,
   version ? "0.1.0",
-  commit ? "unknown",
+  gitCommit ? "unknown",
 }:
 
 pkgs.buildGoModule {
@@ -22,8 +26,10 @@ pkgs.buildGoModule {
         ".git"
         ".devenv"
         ".direnv"
+        ".lgtm"
         ".pre-commit-config.yaml"
         "result"
+        "lgtm" # lokales Build-Artefakt (gitignored), gehört nicht in den Store
       ]);
   };
 
@@ -35,7 +41,7 @@ pkgs.buildGoModule {
     "-s"
     "-w"
     "-X main.version=${version}"
-    "-X main.commit=${commit}"
+    "-X main.commit=${gitCommit}"
   ];
 
   # No cgo, no runtime git binary: pure-Go build.
