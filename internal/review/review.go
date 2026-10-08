@@ -227,3 +227,19 @@ func resolveGitDir(dir string) (string, error) {
 	}
 	return commonDir, nil
 }
+
+// Clear removes <dir>/.lgtm, the whole review state, and reports whether
+// there was any. The .git/info/exclude entry stays: the next review
+// needs it again.
+func Clear(dir string) (bool, error) {
+	stateDir := filepath.Join(dir, ".lgtm")
+	if _, err := os.Stat(stateDir); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("stat %s: %w", stateDir, err)
+	}
+	if err := os.RemoveAll(stateDir); err != nil {
+		return false, fmt.Errorf("remove %s: %w", stateDir, err)
+	}
+	return true, nil
+}

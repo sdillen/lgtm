@@ -2,6 +2,8 @@ package review_test
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,5 +270,35 @@ func TestEnsureExcludedFollowsAGitFile(t *testing.T) {
 	}
 	if string(data) != ".lgtm/\n" {
 		t.Errorf("info/exclude = %q, want %q", data, ".lgtm/\n")
+	}
+}
+
+func TestClearRemovesTheStateDirectoryAndReportsIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := review.NewState().Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cleared, err := review.Clear(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cleared {
+		t.Error("cleared = false, want true")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lgtm")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf(".lgtm still exists: %v", err)
+	}
+}
+
+func TestClearWithoutStateIsANoOp(t *testing.T) {
+	cleared, err := review.Clear(t.TempDir())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared {
+		t.Error("cleared = true, want false")
 	}
 }
