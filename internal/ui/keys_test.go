@@ -57,7 +57,22 @@ func enter(m tea.Model) (tea.Model, tea.Cmd) {
 }
 
 func screen(m tea.Model) string {
-	return ansi.Strip(m.View().Content)
+	return withoutRule(ansi.Strip(m.View().Content))
+}
+
+// withoutRule drops the rule above the status line from a stripped
+// screen. The row tests were written before the rule existed; start
+// adds the row it takes, so their expectations stay valid. The rule
+// itself is pinned by TestStatusLineIsSetOffByARule.
+func withoutRule(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if t := strings.TrimRight(l, " "); len(t) >= 9 && strings.Trim(t, "─") == "" {
+			lines = append(lines[:i], lines[i+1:]...)
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestDefaultKeymapIsValid(t *testing.T) {

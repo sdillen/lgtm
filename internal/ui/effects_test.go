@@ -218,3 +218,25 @@ func TestStatusLineShowsProgressAndBadges(t *testing.T) {
 		t.Errorf("no comment badges in %q", got)
 	}
 }
+
+// TestStatusLineIsSetOffByARule pins the thin rule above the status
+// line: it spans the terminal width, sits directly above the status
+// line, and tiny terminals keep the row for the code.
+func TestStatusLineIsSetOffByARule(t *testing.T) {
+	m := start(ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}), 30, 6)
+	rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if len(rows) != 7 {
+		t.Fatalf("view has %d rows, want the terminal height 7:\n%s", len(rows), strings.Join(rows, "\n"))
+	}
+	if want := strings.Repeat("─", 30); rows[len(rows)-2] != want {
+		t.Errorf("row above the status line = %q, want the rule", rows[len(rows)-2])
+	}
+	if !strings.HasPrefix(rows[len(rows)-1], "main.go") {
+		t.Errorf("last row = %q, want the status line", rows[len(rows)-1])
+	}
+
+	tiny, _ := ui.New([]diff.ReviewFile{file}, "main", themeFor, ui.Options{}).Update(tea.WindowSizeMsg{Width: 30, Height: 3})
+	if strings.Contains(tiny.View().Content, "──────") {
+		t.Error("a 3-row terminal must keep its rows for the code, not for a rule")
+	}
+}

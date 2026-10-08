@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
 	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
@@ -705,6 +704,11 @@ func TestCountedZzCentersAndCountedZtShowsTheLineAtTheTop(t *testing.T) {
 }
 
 func start(m tea.Model, width, height int) tea.Model {
+	// The rule above the status line takes one row; the tests size
+	// the terminal by the rows of code they show.
+	if height >= 3 {
+		height++
+	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return m
 }
@@ -734,7 +738,7 @@ func ctrl(k string) tea.KeyPressMsg {
 
 func assertScreen(t *testing.T, m tea.Model, want []string) {
 	t.Helper()
-	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	lines := strings.Split(screen(m), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}

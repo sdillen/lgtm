@@ -582,6 +582,7 @@ func (m Model) contextView() string {
 	if bottom == "" {
 		bottom = m.contextStatusLine()
 	}
+	b.WriteString(m.footerRule())
 	b.WriteString(ansi.Truncate(bottom, width, ""))
 	return b.String()
 }

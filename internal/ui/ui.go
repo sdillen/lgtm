@@ -1154,6 +1154,7 @@ func (m Model) fileView() string {
 	if bottom == "" {
 		bottom = m.statusLine(width)
 	}
+	b.WriteString(m.footerRule())
 	b.WriteString(ansi.Truncate(bottom, width, ""))
 	if !m.sidebar {
 		return b.String()
@@ -1175,7 +1176,8 @@ func (m Model) fileView() string {
 		out.WriteByte('\n')
 	}
 	if len(content) > m.bodyHeight() {
-		out.WriteString(content[m.bodyHeight()])
+		// The rule and the bottom line span the whole terminal.
+		out.WriteString(strings.Join(content[m.bodyHeight():], "\n"))
 	}
 	return out.String()
 }
@@ -1378,9 +1380,28 @@ func foldText(n int) string {
 	return fmt.Sprintf("⋯ %d unveränderte Zeilen ⋯", n)
 }
 
-// bodyHeight is the number of file rows that fit above the status line.
+// ruleOn reports whether a rule separates the file area from the
+// status line; very small terminals keep the row for the code.
+func (m Model) ruleOn() bool {
+	return m.height >= 4
+}
+
+// bodyHeight is the number of file rows that fit above the status line
+// and the rule that sets it off.
 func (m Model) bodyHeight() int {
+	if m.ruleOn() {
+		return max(0, m.height-2)
+	}
 	return max(0, m.height-1)
+}
+
+// footerRule is the thin line above the status line, ended by a
+// newline; empty when the terminal is too small for it.
+func (m Model) footerRule() string {
+	if !m.ruleOn() {
+		return ""
+	}
+	return m.theme.Styles.Gutter.Render(strings.Repeat("─", max(0, m.width))) + "\n"
 }
 
 // renderLine renders one line of the current file: gutter, marker and the
