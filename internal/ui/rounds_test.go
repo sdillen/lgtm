@@ -1,6 +1,9 @@
 package ui_test
 
 import (
+	"regexp"
+
+	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +118,7 @@ func ansiRow(m tea.Model, s string) string {
 	return ""
 }
 
-func TestCommentsOfEarlierRoundsAreDimmedAndCanBeTickedOff(t *testing.T) {
+func TestOpenCommentsOfEarlierRoundsKeepTheirColourAndCanBeTickedOff(t *testing.T) {
 	dir := t.TempDir()
 	opts := withState(dir)
 	opts.State.StartRound(opts.State.SnapshotRef(1), time.Unix(100, 0))
@@ -128,9 +131,10 @@ func TestCommentsOfEarlierRoundsAreDimmedAndCanBeTickedOff(t *testing.T) {
 	if !strings.Contains(row, "Runde 1") {
 		t.Errorf("comment of round 1 does not name its round: %q", row)
 	}
-	// The dim fold colour #51597d replaces the must colour.
-	if !strings.Contains(row, "38;2;81;89;125") {
-		t.Errorf("comment of round 1 is not dimmed: %q", row)
+	// Only done comments are dimmed (fold colour #51597d); an open one
+	// from an earlier round still needs the agent's attention.
+	if strings.Contains(row, "38;2;81;89;125") {
+		t.Errorf("open comment of round 1 is dimmed: %q", row)
 	}
 
 	press(m, "j", "j", "x")
@@ -264,5 +268,54 @@ func TestInterdiffToggleKeepsExpandedFiles(t *testing.T) {
 
 	if s := screen(m); strings.Contains(s, "generierte Datei") {
 		t.Errorf("toggling collapses the expanded file again:\n%s", s)
+	}
+}
+
+// roundTwoWithComments returns a round 2 review holding two comments of
+// round 1: "fix b" on line 2 (open) and "fix B" on line 3 (done).
+func roundTwoWithComments(dir string) ui.Options {
+	opts := withState(dir)
+	opts.State.StartRound(opts.State.SnapshotRef(1), time.Unix(100, 0))
+	opts.State.AddComment(review.Comment{Path: "a.go", Start: 2, End: 2, Quote: "b", Category: review.Must, Text: "fix b"})
+	done := opts.State.AddComment(review.Comment{Path: "a.go", Start: 3, End: 3, Quote: "B", Category: review.Must, Text: "fix B"})
+	opts.State.SetCommentStatus(done.ID, review.Done)
+	opts.State.StartRound(opts.State.SnapshotRef(2), time.Unix(200, 0))
+	opts.Round = 2
+	return opts
+}
+
+// strikethrough matches the SGR attribute 9 in a styled row.
+var strikethrough = regexp.MustCompile(`\x1b\[(?:[0-9;]*;)?9(?:;[0-9;]*)?m`)
+
+func TestDoneCommentIsMarkedAndStruckThrough(t *testing.T) {
+	m := start(ui.New(roundFull, "main", themeFor, roundTwoWithComments(t.TempDir())), 60, 10)
+
+	row := rowContaining(m, "fix B")
+	if !strings.Contains(ansi.Strip(row), "✓") {
+		t.Errorf("done comment has no ✓ marker: %q", row)
+	}
+	if !strikethrough.MatchString(row) {
+		t.Errorf("done comment is not struck through: %q", row)
+	}
+	if open := rowContaining(m, "fix b"); strings.Contains(ansi.Strip(open), "✓") || strikethrough.MatchString(open) {
+		t.Errorf("open comment looks done: %q", open)
+	}
+}
+
+func TestStatusLineCountsDoneComments(t *testing.T) {
+	m := start(ui.New(roundFull, "main", themeFor, roundTwoWithComments(t.TempDir())), 80, 10)
+
+	if s := screen(m); !strings.Contains(s, "1/2 erledigt") {
+		t.Errorf("status line lacks the done counter:\n%s", s)
+	}
+}
+
+func TestStatusLineShowsNoDoneCounterInTheFirstRoundWithoutDoneComments(t *testing.T) {
+	opts := withState(t.TempDir())
+	opts.State.AddComment(review.Comment{Path: "a.go", Start: 2, End: 2, Quote: "b", Text: "x"})
+	m := start(ui.New(roundFull, "main", themeFor, opts), 80, 10)
+
+	if s := screen(m); strings.Contains(s, "erledigt") {
+		t.Errorf("status line shows a done counter without done comments:\n%s", s)
 	}
 }

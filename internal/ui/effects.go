@@ -259,6 +259,23 @@ func (m Model) progressBar(label bool) string {
 	return b.String() + st.Status.Render(text)
 }
 
+// doneCounter is the review progress of the comments, "1/2 erledigt". It
+// shows from the second round on, where ticking off is the task, or as
+// soon as a comment is done.
+func (m Model) doneCounter() string {
+	all := m.state.Comments()
+	done := 0
+	for _, c := range all {
+		if c.Status == review.Done {
+			done++
+		}
+	}
+	if len(all) == 0 || done == 0 && m.opts.Round < 2 {
+		return ""
+	}
+	return m.theme.Styles.Status.Render(fmt.Sprintf("%d/%d erledigt", done, len(all)))
+}
+
 // commentBadges are the open comments of the review as one badge per
 // category in the category colour; an open must comment is a reversed
 // pill, so it cannot be overlooked. With only resolved comments the

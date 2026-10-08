@@ -442,6 +442,9 @@ func (m Model) noteRowLines(c review.Comment, line int) []row {
 	if m.state.Earlier(c) {
 		text = fmt.Sprintf("Runde %d · ", c.Round) + text
 	}
+	if c.Status == review.Done {
+		text = "✓ " + text
+	}
 	if c.Orphaned {
 		// The code is gone; the last known anchor tells where the
 		// comment was.
@@ -463,12 +466,12 @@ type note struct {
 }
 
 // renderNote renders a comment row in the colour of its category,
-// indented past the gutter. Done comments and comments of earlier
-// rounds are dimmed.
+// indented past the gutter. Done comments are dimmed and struck
+// through; open comments of earlier rounds keep their colour.
 func (m Model) renderNote(n *note, cursor bool) string {
 	style := m.categoryStyle(n.category)
-	if n.comment.Status != review.Open || m.state.Earlier(n.comment) {
-		style = m.theme.Styles.Fold
+	if n.comment.Status == review.Done {
+		style = m.theme.Styles.Fold.Strikethrough(true)
 	}
 	pad := lipgloss.NewStyle()
 	if cursor {

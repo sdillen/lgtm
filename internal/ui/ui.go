@@ -1384,6 +1384,9 @@ func (m Model) statusAt(level, pathW int) string {
 	if b := m.commentBadges(); b != "" {
 		out = append(out, b)
 	}
+	if d := m.doneCounter(); d != "" {
+		out = append(out, d)
+	}
 	var tail []string
 	if n := m.orphanCount(); n > 0 {
 		tail = append(tail, fmt.Sprintf("%d verwaist", n))
