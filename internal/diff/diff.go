@@ -173,23 +173,25 @@ func NewWithAttrs(path, before, after string, generated func(string) bool) Revie
 // ignoring all whitespace, and the matched lines show the new text, so the
 // reader sees the new file.
 func newView(path, before, after string, ignoreWS bool) ReviewFile {
-	edits := zdiff.Edits(splitLines(before), splitLines(after))
+	x, y := splitLines(before), splitLines(after)
+	var edits []zdiff.Edit[string]
 	if ignoreWS {
-		edits = zdiff.EditsFunc(splitLines(before), splitLines(after), wsEqual)
+		// The lines are compared without whitespace; stripping each
+		// line once is far cheaper than stripping both sides of every
+		// comparison. The texts come from x and y by position.
+		edits = zdiff.Edits(stripAll(x), stripAll(y))
+	} else {
+		edits = zdiff.Edits(x, y)
 	}
 	lines := make([]Line, 0, len(edits))
 	for _, e := range edits {
 		switch e.Op {
 		case zdiff.Match:
-			text := trimEOL(e.X)
-			if ignoreWS {
-				text = trimEOL(e.Y)
-			}
-			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: text})
+			lines = append(lines, Line{Kind: Context, Old: e.PosX + 1, New: e.PosY + 1, Text: trimEOL(y[e.PosY])})
 		case zdiff.Delete:
-			lines = append(lines, Line{Kind: Deleted, Old: e.PosX + 1, Text: trimEOL(e.X)})
+			lines = append(lines, Line{Kind: Deleted, Old: e.PosX + 1, Text: trimEOL(x[e.PosX])})
 		case zdiff.Insert:
-			lines = append(lines, Line{Kind: Added, New: e.PosY + 1, Text: trimEOL(e.Y)})
+			lines = append(lines, Line{Kind: Added, New: e.PosY + 1, Text: trimEOL(y[e.PosY])})
 		}
 	}
 	hunks := hunks(lines)
@@ -248,10 +250,14 @@ func (f ReviewFile) Collapsed() bool {
 	return f.Kind == KindGenerated || f.Deleted()
 }
 
-// wsEqual reports whether two lines are equal ignoring all whitespace.
-// It is the equality of the whitespace-ignoring diff.
-func wsEqual(a, b string) bool {
-	return stripWS(a) == stripWS(b)
+// stripAll returns the lines with all whitespace removed: the keys under
+// which the whitespace-ignoring diff compares them.
+func stripAll(lines []string) []string {
+	stripped := make([]string, len(lines))
+	for i, l := range lines {
+		stripped[i] = stripWS(l)
+	}
+	return stripped
 }
 
 // stripWS removes every whitespace rune from s.
@@ -282,7 +288,7 @@ func pairWords(lines []Line, hunks []Hunk) {
 				}
 				d := pending[0]
 				pending = pending[1:]
-				del, add, meaningful := changedRanges(tokenize(lines[d].Text), tokenize(lines[i].Text))
+				del, add, meaningful := changedRanges(lines[d].Text, lines[i].Text)
 				if !meaningful {
 					continue
 				}
@@ -297,8 +303,9 @@ func pairWords(lines []Line, hunks []Hunk) {
 // paired line: the deleted tokens of the old line and the inserted tokens
 // of the new line. meaningful is false when the token diff has no common
 // token, i.e. the pairing does not correspond to an actual edit.
-func changedRanges(old, new []token) (del, add []Word, meaningful bool) {
-	edits := zdiff.EditsFunc(old, new, func(a, b token) bool { return a.text == b.text })
+func changedRanges(oldLine, newLine string) (del, add []Word, meaningful bool) {
+	old, new := tokenize(oldLine), tokenize(newLine)
+	edits := zdiff.Edits(tokenTexts(oldLine, old), tokenTexts(newLine, new))
 	oi, ni := 0, 0
 	for _, e := range edits {
 		switch e.Op {
@@ -307,29 +314,26 @@ func changedRanges(old, new []token) (del, add []Word, meaningful bool) {
 			oi++
 			ni++
 		case zdiff.Delete:
-			del = append(del, Word{Start: old[oi].start, End: old[oi].end})
+			del = append(del, old[oi])
 			oi++
 		case zdiff.Insert:
-			add = append(add, Word{Start: new[ni].start, End: new[ni].end})
+			add = append(add, new[ni])
 			ni++
 		}
 	}
 	return del, add, meaningful
 }
 
-// token is one token of a line: its text and byte span in the line.
-type token struct {
-	text       string
-	start, end int
-}
-
 // tokenize splits a line into tokens: maximal runs of word characters
 // (letters, digits, underscore) and each other non-space character
 // individually. Whitespace separates tokens and is not part of any token.
-func tokenize(line string) []token {
-	var toks []token
+// The tokens are byte spans into the line.
+func tokenize(line string) []Word {
+	// Code averages a token per two to four bytes; one guess spares
+	// most of the regrowth on long lines.
+	toks := make([]Word, 0, len(line)/3+1)
 	for i := 0; i < len(line); {
-		r, size := utf8.DecodeRuneInString(line[i:])
+		r, size := runeAt(line, i)
 		if unicode.IsSpace(r) {
 			i += size
 			continue
@@ -337,17 +341,35 @@ func tokenize(line string) []token {
 		j := i + size
 		if wordRune(r) {
 			for j < len(line) {
-				r2, s2 := utf8.DecodeRuneInString(line[j:])
+				r2, s2 := runeAt(line, j)
 				if !wordRune(r2) {
 					break
 				}
 				j += s2
 			}
 		}
-		toks = append(toks, token{text: line[i:j], start: i, end: j})
+		toks = append(toks, Word{Start: i, End: j})
 		i = j
 	}
 	return toks
+}
+
+// runeAt decodes the rune at line[i], skipping the decoder for ASCII.
+func runeAt(line string, i int) (rune, int) {
+	if c := line[i]; c < utf8.RuneSelf {
+		return rune(c), 1
+	}
+	return utf8.DecodeRuneInString(line[i:])
+}
+
+// tokenTexts are the texts of the tokens of line, the sequence the token
+// diff compares.
+func tokenTexts(line string, toks []Word) []string {
+	texts := make([]string, len(toks))
+	for i, t := range toks {
+		texts[i] = line[t.Start:t.End]
+	}
+	return texts
 }
 
 // wordRune reports whether r is a word character of the tokenizer.
