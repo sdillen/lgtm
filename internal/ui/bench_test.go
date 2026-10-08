@@ -60,24 +60,33 @@ func benchPress(b *testing.B, m tea.Model, keys ...string) tea.Model {
 
 func BenchmarkRenderFrame(b *testing.B) {
 	big := benchBig(10000)
-	minified := benchMinified()
+	// A large file of context lines with all folds opened (zR): the
+	// path of unchanged lines, which the other cases do not take.
+	unfolded := diff.New("big.txt",
+		strings.Repeat("a line of context\n", 5000),
+		strings.Repeat("a line of context\n", 5000)+"new line\n")
 	cases := []struct {
 		name string
 		file diff.ReviewFile
+		set  string   // option turned on with :set before the measurement
+		keys []string // pressed before the measurement
 	}{
 		{name: "10kLinesTop", file: big},
-		{name: "10kLinesEnd", file: big},
-		{name: "Minified", file: minified},
+		// Warm the cache at the end of the file, so the benchmark
+		// measures the steady-state frame, not the jump.
+		{name: "10kLinesEnd", file: big, keys: []string{"G"}},
+		{name: "10kLinesWrap", file: big, set: "wrap"},
+		{name: "10kLinesSidebar", file: big, set: "sidebar"},
+		{name: "5kContextUnfolded", file: unfolded, keys: []string{"z", "R"}},
+		{name: "Minified", file: benchMinified()},
 	}
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			m := benchStart(b, c.file)
-			if c.name == "10kLinesEnd" {
-				// Warm the cache at the end of the file, so the
-				// benchmark measures the steady-state frame, not
-				// the jump.
-				m = benchPress(b, m, "G")
+			if c.set != "" {
+				m, _ = enter(typeText(benchPress(b, m, ":"), "set "+c.set))
 			}
+			m = benchPress(b, m, c.keys...)
 			m.View()
 			b.ResetTimer()
 			for b.Loop() {

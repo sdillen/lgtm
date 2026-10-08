@@ -581,20 +581,6 @@ func TestZtPutsTheCursorAtTheTopAndZzCentersIt(t *testing.T) {
 	})
 }
 
-// BenchmarkViewLargeFile measures rendering the visible part of a large
-// unfolded file, the core of the scroll path.
-func BenchmarkViewLargeFile(b *testing.B) {
-	large := diff.New("big.txt",
-		strings.Repeat("a line of context\n", 5000),
-		strings.Repeat("a line of context\n", 5000)+"new line\n")
-	m := start(ui.New([]diff.ReviewFile{large}, "main", themeFor, ui.Options{}), 120, 40)
-	m = press(m, "z", "R")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.View()
-	}
-}
-
 func TestHunkJumpInUnifiedModeMovesBetweenSections(t *testing.T) {
 	m := start(ui.New([]diff.ReviewFile{big}, "main", themeFor, ui.Options{}), 40, 4)
 

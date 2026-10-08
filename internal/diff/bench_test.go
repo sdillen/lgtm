@@ -28,6 +28,31 @@ func changeLines(s string, lines map[int]string) string {
 	return strings.Join(parts, "")
 }
 
+// manyChanges returns two versions of an n-line file where every 7th
+// line is modified: hundreds of paired lines, each with a token diff.
+func manyChanges(n int) (old, new string) {
+	var before, after strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&before, "line %d with some content\n", i)
+		if i%7 == 0 {
+			fmt.Fprintf(&after, "line %d with some changed content\n", i)
+		} else {
+			fmt.Fprintf(&after, "line %d with some content\n", i)
+		}
+	}
+	return before.String(), after.String()
+}
+
+// reindented is s with every 3rd line indented by a tab, a
+// whitespace-only change that ignorews hides.
+func reindented(s string) string {
+	parts := strings.SplitAfter(s, "\n")
+	for i := 0; i < len(parts); i += 3 {
+		parts[i] = "\t" + parts[i]
+	}
+	return strings.Join(parts, "")
+}
+
 // minified is one very long line of dense code, like a bundled or
 // minified asset.
 func minified() (old, new string) {
@@ -51,6 +76,7 @@ func BenchmarkDiffNew(b *testing.B) {
 		49999: "line 49999 := changed + 3\n",
 	})
 	minOld, minNew := minified()
+	manyOld, manyNew := manyChanges(10000)
 
 	cases := []struct {
 		name     string
@@ -58,6 +84,7 @@ func BenchmarkDiffNew(b *testing.B) {
 	}{
 		{name: "10kLines", old: old10k, new: new10k},
 		{name: "50kLines", old: old50k, new: new50k},
+		{name: "10kLinesManyChanges", old: manyOld, new: manyNew},
 		{name: "Minified", old: minOld, new: minNew},
 	}
 	for _, c := range cases {
@@ -67,5 +94,14 @@ func BenchmarkDiffNew(b *testing.B) {
 				diff.New("bench.go", c.old, c.new)
 			}
 		})
+	}
+}
+
+func BenchmarkWithIgnoreWS(b *testing.B) {
+	old := genGo(10000)
+	f := diff.New("bench.go", old, reindented(old))
+	b.ReportAllocs()
+	for b.Loop() {
+		f.WithIgnoreWS(true)
 	}
 }

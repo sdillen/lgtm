@@ -1,7 +1,6 @@
 package diff_test
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -306,22 +305,6 @@ func assertSection(t *testing.T, got, want diff.Section) {
 	t.Helper()
 	if got != want {
 		t.Errorf("section = %+v, want %+v", got, want)
-	}
-}
-
-func BenchmarkNewLargeFile(b *testing.B) {
-	var before, after strings.Builder
-	for i := 0; i < 10000; i++ {
-		fmt.Fprintf(&before, "line %d with some content\n", i)
-		if i%7 == 0 {
-			fmt.Fprintf(&after, "line %d with some changed content\n", i)
-		} else {
-			fmt.Fprintf(&after, "line %d with some content\n", i)
-		}
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		diff.New("big.txt", before.String(), after.String())
 	}
 }
 
