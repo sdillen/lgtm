@@ -945,10 +945,18 @@ func (m Model) buildRows() []row {
 	if m.fileCollapsed[m.fileIdx] {
 		return m.collapsedRows(f)
 	}
+	var rows []row
 	if m.unified {
-		return m.unifiedRows(f)
+		rows = m.unifiedRows(f)
+	} else {
+		rows = m.fullRows(f)
 	}
-	return m.fullRows(f)
+	if len(rows) == 0 {
+		// Cursor und Scroll-Logik erwarten mindestens eine Zeile, z. B. bei
+		// leeren Dateien oder Diffs ohne Hunks.
+		return []row{{line: -1, fold: -1, meta: "leer"}}
+	}
+	return rows
 }
 
 // fullRows are the lines of the full-file view; each closed fold collapses

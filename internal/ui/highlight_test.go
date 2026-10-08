@@ -173,3 +173,15 @@ func TestScreenCacheMatchesUncachedFrames(t *testing.T) {
 		}
 	}
 }
+
+// TestJumpToEmptyFileDoesNotPanic pins that jumping to a file without
+// any lines leaves a valid cursor row instead of indexing an empty view.
+func TestJumpToEmptyFileDoesNotPanic(t *testing.T) {
+	files := []diff.ReviewFile{bigFile(3), {Path: "empty.txt"}}
+	m := startM(New(files, "empty", themeFor, Options{}), 80, 20)
+	m = pressM(m, "]", "f")
+	if m.fileIdx != 1 {
+		t.Fatalf("fileIdx = %d, want 1", m.fileIdx)
+	}
+	m.View()
+}
