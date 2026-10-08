@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -64,8 +65,10 @@ func (m *Model) stepScroll() {
 	t.frames++
 	t.off.step(float64(t.off1))
 	t.cur.step(float64(t.cur1))
-	m.offset = int(t.off.pos + 0.5)
-	m.cursor = int(t.cur.pos + 0.5)
+	// The spring overshoots its target; on a jump to the top (gg after
+	// G) it swings below zero, which is no valid row.
+	m.offset = max(0, int(math.Round(t.off.pos)))
+	m.cursor = max(0, int(math.Round(t.cur.pos)))
 	if (t.off.done && t.cur.done) || t.frames >= maxAnimFrames {
 		m.offset, m.cursor = t.off1, t.cur1
 		m.smooth = nil
