@@ -22,6 +22,17 @@ func benchBig(n int) diff.ReviewFile {
 	return diff.ReviewFile{Path: "bench.go", Lines: lines}
 }
 
+// benchWords is benchBig with a changed word in every line, the shape of
+// a real diff of modified lines.
+func benchWords(n int) diff.ReviewFile {
+	f := benchBig(n)
+	for i := range f.Lines {
+		f.Lines[i].Old = i + 1
+		f.Lines[i].Words = []diff.Word{{Start: 5, End: 10}}
+	}
+	return f
+}
+
 // benchMinified is one very long line of dense code, like a bundled or
 // minified asset: the lexer produces thousands of segments for a single
 // row.
@@ -84,6 +95,7 @@ func BenchmarkScroll(b *testing.B) {
 		file diff.ReviewFile
 	}{
 		{name: "10kLines", file: big},
+		{name: "10kLinesWords", file: benchWords(10000)},
 		{name: "Minified", file: minified},
 	}
 	for _, c := range cases {

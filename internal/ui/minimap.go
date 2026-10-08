@@ -54,25 +54,31 @@ func (m Model) minimapStrip(total int, mark func(int) color.Color) []string {
 	return cells
 }
 
-// minimapMark is the background of one view row in the minimap: the
+// minimapMarks returns the background of one view row in the minimap: the
 // comment category colour of a comment row, the colour of the +/−
 // marker for a changed line (stronger than the line wash, so the mark
-// stands out in the narrow strip), nothing for the rest.
-func (m Model) minimapMark(rows []row, j int) color.Color {
-	r := rows[j]
-	if r.note != nil {
-		return m.categoryStyle(r.note.category).GetForeground()
-	}
-	if r.line < 0 || r.line >= len(m.files[m.fileIdx].Lines) {
+// stands out in the narrow strip), nothing for the rest. The marker
+// colours are looked up once, not per row.
+func (m Model) minimapMarks(rows []row) func(int) color.Color {
+	lines := m.files[m.fileIdx].Lines
+	added := m.theme.Styles.Added.GetForeground()
+	deleted := m.theme.Styles.Deleted.GetForeground()
+	return func(j int) color.Color {
+		r := rows[j]
+		if r.note != nil {
+			return m.categoryStyle(r.note.category).GetForeground()
+		}
+		if r.line < 0 || r.line >= len(lines) {
+			return nil
+		}
+		switch lines[r.line].Kind {
+		case diff.Added:
+			return added
+		case diff.Deleted:
+			return deleted
+		}
 		return nil
 	}
-	switch m.files[m.fileIdx].Lines[r.line].Kind {
-	case diff.Added:
-		return m.theme.Styles.Added.GetForeground()
-	case diff.Deleted:
-		return m.theme.Styles.Deleted.GetForeground()
-	}
-	return nil
 }
 
 // minimapCell is the strip cell of one screen row, keeping the column

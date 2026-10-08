@@ -103,3 +103,42 @@ func TestDeletedLineHighlightingIsLazy(t *testing.T) {
 		t.Errorf("lexed %d dimmed deleted lines, want only the visible one", got)
 	}
 }
+
+// The line cache must never change what is drawn: every frame of a
+// session of scrolling, cursor and column moves equals the same frame
+// drawn without the cache.
+func TestLineCacheMatchesUncachedRendering(t *testing.T) {
+	f := bigFile(60)
+	for i := range f.Lines {
+		f.Lines[i].Text = fmt.Sprintf("\tfunc f%d() { return a + b } // note", i)
+		if i%3 == 0 {
+			f.Lines[i].Old = i + 1
+			f.Lines[i].Words = []diff.Word{{Start: 6, End: 10}}
+		}
+	}
+	m := startM(New([]diff.ReviewFile{f}, "main", themeFor, Options{}), 50, 12)
+	for _, k := range []string{"j", "j", "l", "l", "k", "j", "j", "j", "$", "0", "j", "k"} {
+		next, _ := m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
+		m = next.(Model)
+		for i := range m.bodyHeight() {
+			j := m.offset + i
+			rows := m.rows()
+			if j >= len(rows) || rows[j].line < 0 {
+				continue
+			}
+			idx := rows[j].line
+			cursor := j == m.cursor
+			l := m.files[m.fileIdx].Lines[idx]
+			mark := -1
+			if cursor && idx == m.cursorViewLine() {
+				mark = colMark(l.Text, m.col)
+			}
+			// twice: the second call is served from the cache
+			for range 2 {
+				if got, want := m.renderLine(l, idx, cursor), m.drawLine(l, idx, cursor, mark); got != want {
+					t.Fatalf("key %q line %d: cached %q, uncached %q", k, idx, got, want)
+				}
+			}
+		}
+	}
+}

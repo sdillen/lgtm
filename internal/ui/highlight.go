@@ -33,6 +33,52 @@ type fileHighlights struct {
 	newDone int          // new-file lines lexed so far
 
 	dim map[int]theme.Line // dimmed deleted lines by file-line index
+
+	// rendered caches finished diff lines: scrolling by one row changes
+	// two lines (cursor in, cursor out), not the whole window. It lives
+	// and dies with the highlights, which are rebuilt whenever the file
+	// or the theme changes.
+	rendered map[lineKey]renderedLine
+}
+
+// maxRendered bounds the line cache; it is cleared when full, which
+// only happens when the horizontal scroll sweeps over a huge file.
+const maxRendered = 8192
+
+// lineKey is everything a rendered diff line depends on besides the
+// file and the theme: the line, the cursor state, the horizontal window
+// and the identity of the highlighted segments, which changes when the
+// lazy highlighter has caught up with the line.
+type lineKey struct {
+	idx        int
+	cursor     bool
+	mark       int
+	skip, need int
+	seg0       *theme.Segment
+	words      int
+}
+
+// renderedLine is a cached line; text and kind guard against a file
+// whose lines changed under the same highlights.
+type renderedLine struct {
+	text string
+	kind diff.Kind
+	out  string
+}
+
+func (h *fileHighlights) cachedLine(k lineKey, l diff.Line) (string, bool) {
+	e, ok := h.rendered[k]
+	if !ok || e.kind != l.Kind || e.text != l.Text {
+		return "", false
+	}
+	return e.out, true
+}
+
+func (h *fileHighlights) storeLine(k lineKey, l diff.Line, out string) {
+	if h.rendered == nil || len(h.rendered) >= maxRendered {
+		h.rendered = make(map[lineKey]renderedLine)
+	}
+	h.rendered[k] = renderedLine{text: l.Text, kind: l.Kind, out: out}
 }
 
 // newFileHighlights returns the lazy highlights of a review file.

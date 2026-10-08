@@ -634,11 +634,12 @@ func (m Model) renderContextLine(idx int, cursor bool) string {
 	if len(segs) == 0 && m.context.lines[idx] != "" {
 		segs = []theme.Segment{{Text: strings.ReplaceAll(m.context.lines[idx], "\t", "    ")}}
 	}
+	mark := -1
 	if cursor && idx == m.cursor {
-		segs = colSegments(segs, m.context.lines[idx], m.col)
+		mark = colMark(m.context.lines[idx], m.col)
 	}
 	num := fmt.Sprintf("%4d ", idx+1)
 	var b strings.Builder
-	m.renderBody(&b, segs, len(num), cursor)
+	m.renderBody(&b, segs, len(num), cursor, mark)
 	return gutter.Render(num) + b.String()
 }

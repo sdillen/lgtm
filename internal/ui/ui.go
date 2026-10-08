@@ -128,6 +128,10 @@ type Model struct {
 	foldsOpen []bool // per fold of the current file: open?
 	unified   bool   // show the classic unified diff instead of the full file
 
+	// added caches Added() of the current file for one frame; fileView
+	// sets it on its own copy of the model.
+	addedKnown, added bool
+
 	mode       mode
 	keys       keymap.Dispatcher // the key sequence typed so far
 	keyGen     int               // counts key presses, to drop stale which-key timers
@@ -1146,7 +1150,9 @@ func (m Model) fileView() string {
 	var b strings.Builder
 	rows := m.rows()
 	m.hl.ensureRows(rows, m.offset-highlightBuffer, m.offset+m.bodyHeight()+highlightBuffer)
-	strip := m.minimapStrip(len(rows), func(j int) color.Color { return m.minimapMark(rows, j) })
+	// Scanning the file for "new" once per frame, not once per row.
+	m.addedKnown, m.added = true, m.files[m.fileIdx].Added()
+	strip := m.minimapStrip(len(rows), m.minimapMarks(rows))
 	if m.minimapOn() {
 		width--
 	}
@@ -1513,12 +1519,48 @@ func (m Model) footerRule() string {
 	return m.theme.Styles.Gutter.Render(strings.Repeat("─", max(0, m.width))) + "\n"
 }
 
+// fileAdded reports whether the current file is new, from the per-frame
+// cache when fileView has set it.
+func (m Model) fileAdded() bool {
+	if m.addedKnown {
+		return m.added
+	}
+	return m.files[m.fileIdx].Added()
+}
+
 // renderLine renders one line of the current file: gutter, marker and the
 // syntax-highlighted body. Added and context lines come from the file's
 // highlight cache, deleted lines are the dimmed per-line highlight. The
 // wash backgrounds of changed lines and the cursor background are applied
 // on top of the token styles.
 func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
+	mark := -1
+	if cursor && idx == m.cursorViewLine() && m.rows()[m.cursor].line == idx {
+		mark = colMark(l.Text, m.col)
+	}
+	// Flashes and the theme fade change the colours from frame to frame.
+	if m.hl == nil || m.flash != nil || m.fade != nil {
+		return m.drawLine(l, idx, cursor, mark)
+	}
+	segs := m.segments(l, idx)
+	if len(segs) == 0 {
+		return m.drawLine(l, idx, cursor, mark)
+	}
+	// The window is only a cache key: the prefix of drawLine (line
+	// numbers and marker) is fixed per line, so an approximation is
+	// as unique as the exact width.
+	skip, need := m.bodyWindow(12)
+	key := lineKey{idx: idx, cursor: cursor, mark: mark, skip: skip, need: need, seg0: &segs[0], words: len(l.Words)}
+	if out, ok := m.hl.cachedLine(key, l); ok {
+		return out
+	}
+	out := m.drawLine(l, idx, cursor, mark)
+	m.hl.storeLine(key, l, out)
+	return out
+}
+
+// drawLine renders one line of the current file without the cache.
+func (m Model) drawLine(l diff.Line, idx int, cursor bool, mark int) string {
 	st := m.theme.Styles
 	gutter := st.Gutter
 	if cursor {
@@ -1535,7 +1577,7 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 	// New files carry no wash: the whole file is added, so a flat
 	// background would drown the syntax colours. The gutter markers
 	// mark the lines.
-	if wash != nil && m.files[m.fileIdx].Added() {
+	if wash != nil && m.fileAdded() {
 		wash = nil
 	}
 	wash = m.flashWash(m.files[m.fileIdx].Path, l, wash)
@@ -1555,14 +1597,21 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 		segs = wordSegments(segs, l.Text, l.Words, bg)
 	}
 
-	if cursor && idx == m.cursorViewLine() && m.rows()[m.cursor].line == idx {
-		segs = colSegments(segs, l.Text, m.col)
-	}
-
 	num := fmt.Sprintf("%4s %4s", lineNum(l.Old), lineNum(l.New))
 	var b strings.Builder
-	m.renderBody(&b, segs, len(num)+len(marker), cursor)
+	m.renderBody(&b, segs, len(num)+len(marker), cursor, mark)
 	return gutter.Render(num) + markerStyle.Render(marker) + b.String()
+}
+
+// bodyWindow is the horizontal window renderBody covers: the cells to
+// skip and the cells needed after them.
+func (m Model) bodyWindow(prefixCells int) (skip, need int) {
+	skip = max(m.hscroll-prefixCells, 0)
+	need = m.width
+	if m.wrap {
+		need = m.wrapLimit()
+	}
+	return skip, need
 }
 
 // renderBody writes the styled segments of a line body into b, covering
@@ -1571,26 +1620,33 @@ func (m Model) renderLine(l diff.Line, idx int, cursor bool) string {
 // window is covered. The caller's ansi.Truncate and TruncateLeft cut
 // the exact cell boundary afterwards, so the output is identical to
 // rendering every segment, but minified lines only cost one window.
-// prefixCells are the cells the body starts at (gutter and marker).
-func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells int, cursor bool) {
-	skip := m.hscroll - prefixCells
-	if skip < 0 {
-		skip = 0
-	}
-	need := m.width
-	if m.wrap {
-		need = m.wrapLimit()
-	}
+// prefixCells are the cells the body starts at (gutter and marker). mark
+// is the expanded byte offset of the column cursor, or -1 for none: the
+// character there is drawn in reverse video, or a blank cell at the end
+// of the line. Splitting at render time keeps the cached segments
+// untouched and avoids copying them for every frame.
+func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells int, cursor bool, mark int) {
+	skip, need := m.bodyWindow(prefixCells)
 	end := skip + need
-	acc, padded := 0, false
+	acc, padded, pos := 0, false, 0
+	var last lipgloss.Style
+	emit := func(text string, style lipgloss.Style) {
+		if cursor {
+			style = style.Background(m.theme.Styles.Cursor)
+		}
+		b.WriteString(style.Render(text))
+	}
 	for _, s := range segs {
+		start := pos
+		pos += len(s.Text)
+		last = s.Style
 		w := ansi.StringWidth(s.Text)
 		if acc+w <= skip {
 			acc += w
 			continue
 		}
 		if acc >= end {
-			break
+			return
 		}
 		if acc > 0 && !padded {
 			// Stand in for the skipped segments, so the cut at
@@ -1598,12 +1654,22 @@ func (m Model) renderBody(b *strings.Builder, segs []theme.Segment, prefixCells 
 			b.WriteString(strings.Repeat(" ", acc))
 		}
 		padded = true
-		style := s.Style
-		if cursor {
-			style = style.Background(m.theme.Styles.Cursor)
+		if mark >= start && mark < pos {
+			at := mark - start
+			_, size := utf8.DecodeRuneInString(s.Text[at:])
+			emit(s.Text[:at], s.Style)
+			emit(s.Text[at:at+size], s.Style.Reverse(true))
+			emit(s.Text[at+size:], s.Style)
+		} else {
+			emit(s.Text, s.Style)
 		}
-		b.WriteString(style.Render(s.Text))
 		acc += w
+	}
+	if mark >= pos && acc < end {
+		if acc > 0 && !padded {
+			b.WriteString(strings.Repeat(" ", acc))
+		}
+		emit(" ", last.Reverse(true))
 	}
 }
 
@@ -1621,37 +1687,13 @@ func washSegments(segs []theme.Segment, wash color.Color) []theme.Segment {
 	return washed
 }
 
-// colSegments marks the character at byte offset col of raw with reverse
-// video: the column cursor that go-to-definition and the word searches
-// work from. At the end of the line, or on an empty line, a blank cell
-// carries the mark. The segments carry the tab-expanded text, so col is
-// translated to the expanded offset first.
-func colSegments(segs []theme.Segment, raw string, col int) []theme.Segment {
+// colMark returns the offset in the tab-expanded text of the character at
+// byte offset col of raw: the column cursor that go-to-definition and the
+// word searches work from. The segments carry the expanded text, so col is
+// translated first.
+func colMark(raw string, col int) int {
 	col = min(max(col, 0), len(raw))
-	pos := col + 3*strings.Count(raw[:col], "\t")
-	out := make([]theme.Segment, 0, len(segs)+2)
-	done := false
-	for _, s := range segs {
-		if done || pos >= len(s.Text) {
-			pos -= len(s.Text)
-			out = append(out, s)
-			continue
-		}
-		_, size := utf8.DecodeRuneInString(s.Text[pos:])
-		out = append(out,
-			theme.Segment{Text: s.Text[:pos], Style: s.Style},
-			theme.Segment{Text: s.Text[pos : pos+size], Style: s.Style.Reverse(true)},
-			theme.Segment{Text: s.Text[pos+size:], Style: s.Style})
-		done = true
-	}
-	if !done {
-		var style lipgloss.Style
-		if len(segs) > 0 {
-			style = segs[len(segs)-1].Style
-		}
-		out = append(out, theme.Segment{Text: " ", Style: style.Reverse(true)})
-	}
-	return out
+	return col + 3*strings.Count(raw[:col], "\t")
 }
 
 // wordSegments splits the syntax segments of a line at the intra-line word
