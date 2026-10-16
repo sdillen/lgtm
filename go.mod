@@ -1,6 +1,6 @@
 module github.com/sdillen/lgtm
 
-go 1.26.9
+go 1.27.0
 
 require (
 	charm.land/bubbletea/v2 v2.0.10
@@ -16,7 +16,7 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/lucasb-eyer/go-colorful v1.4.1
-	znkr.io/diff v1.0.2
+	znkr.io/diff v1.1.2
 )
 
 require (
