@@ -14,8 +14,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/search"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 // stubRepo is a search.Repo over fixed contents, for the pure searcher

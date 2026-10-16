@@ -6,8 +6,8 @@ import (
 
 	"time"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/ui"
 )
 
 // TestMessagesShowAsToastInTheTopRightCorner: command results are

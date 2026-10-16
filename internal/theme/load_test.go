@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/colorprofile"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // writeTheme stores a TOML theme file in dir/themes/<name>.toml.

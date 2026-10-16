@@ -1,6 +1,6 @@
 package ui
 
-import "gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
+import "github.com/sdillen/lgtm/internal/keymap"
 
 // The actions of the review view. Their names are the keys of the [keys]
 // table in the config.

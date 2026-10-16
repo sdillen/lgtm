@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 // watchTimeout bounds the wait for a change signal; quietPeriod is how

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
+	"github.com/sdillen/lgtm/internal/config"
 )
 
 func TestDirUsesXDGConfigHome(t *testing.T) {

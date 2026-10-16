@@ -10,7 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // parseHex turns a hex colour into a color.Color for Detect.

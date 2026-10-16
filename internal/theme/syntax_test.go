@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/colorprofile"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 const goSrc = "package main\n\n// comment\nfunc main() {\n\treturn\n}\n"

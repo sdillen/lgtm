@@ -10,8 +10,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 // TestRangeReportsSubmoduleChanges pins that a gitlink change between

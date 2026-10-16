@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/export"
+	"github.com/sdillen/lgtm/internal/review"
 )
 
 // copyPrompt renders the prompt for all open comments and copies it to

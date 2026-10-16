@@ -3,13 +3,13 @@ package ui_test
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/review"
 	"strings"
 	"testing"
 	"time"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/ui"
 )
 
 // TestLgtmShowsTheConfirmationMoment pins the acceptance criterion

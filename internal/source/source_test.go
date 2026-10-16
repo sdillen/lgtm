@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	git "github.com/go-git/go-git/v6"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 func TestDefaultCombinesCommitsSinceMergeBaseWithUncommittedChanges(t *testing.T) {

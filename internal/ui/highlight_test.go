@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // themeFor is the fixed theme of the highlighting tests, so the colours

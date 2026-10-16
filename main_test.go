@@ -16,9 +16,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
+	"github.com/sdillen/lgtm/internal/export"
+	"github.com/sdillen/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/ui"
 )
 
 func TestParseNoArgsMeansDefault(t *testing.T) {

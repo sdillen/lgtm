@@ -16,11 +16,11 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/keymap"
+	"github.com/sdillen/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/search"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // contextWindow is how many unchanged lines surround each hunk in the

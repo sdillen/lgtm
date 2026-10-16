@@ -20,7 +20,7 @@ The demo is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`doc
 ## Installation
 
 ```sh
-go install gitea.fit.fraunhofer.de/ste05096/lgtm@latest
+go install github.com/sdillen/lgtm@latest
 ```
 
 Or build from a checkout:

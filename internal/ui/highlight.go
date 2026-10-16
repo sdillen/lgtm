@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // highlightBuffer is how many rows beyond the visible area are

@@ -10,7 +10,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/review"
 )
 
 // runReview runs lgtm in dir with args and returns the model at a

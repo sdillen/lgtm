@@ -17,15 +17,15 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
+	"github.com/sdillen/lgtm/internal/config"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/export"
+	"github.com/sdillen/lgtm/internal/keymap"
+	"github.com/sdillen/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/search"
+	"github.com/sdillen/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/ui"
 )
 
 // Exit codes: 0 after :lgtm or without open comments, 1 with open

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/diff"
 )
 
 // TestIgnoreWSHidesAWhitespaceOnlyChange pins that a pair whose lines

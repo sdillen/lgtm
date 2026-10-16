@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/template"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/review"
 )
 
 // categoryPriority orders the categories for the prompt: must first, so

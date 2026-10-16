@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/config"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/config"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 func TestParseThemeFlag(t *testing.T) {

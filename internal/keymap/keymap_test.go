@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
+	"github.com/sdillen/lgtm/internal/keymap"
 )
 
 var defaults = []keymap.Binding{

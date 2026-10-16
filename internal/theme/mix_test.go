@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 func rgb(c color.Color) [3]uint32 {

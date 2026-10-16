@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/export"
+	"github.com/sdillen/lgtm/internal/export"
 )
 
 // writeFile creates path with content, creating parent directories.

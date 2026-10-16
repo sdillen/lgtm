@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/search"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/theme"
+	"github.com/sdillen/lgtm/internal/keymap"
+	"github.com/sdillen/lgtm/internal/search"
+	"github.com/sdillen/lgtm/internal/theme"
 )
 
 // contextFile is a file beyond the review, opened read-only in its new

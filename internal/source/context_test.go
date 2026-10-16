@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 // TestFilesListsTrackedAndUntrackedFiles pins the file listing the

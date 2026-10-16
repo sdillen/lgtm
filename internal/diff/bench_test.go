@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/diff"
 )
 
 // genGo returns n lines of Go-like code with a few keywords per line, so

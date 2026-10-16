@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/ui"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/ui"
 )
 
 // longLine is a file with one very long added line, for the wrap and

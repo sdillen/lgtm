@@ -49,7 +49,7 @@ pkgs.buildGoModule {
 
   meta = {
     description = "Code-review TUI for agentic workflows";
-    homepage = "https://gitea.fit.fraunhofer.de/ste05096/lgtm";
+    homepage = "https://github.com/sdillen/lgtm";
     mainProgram = "lgtm";
   };
 }

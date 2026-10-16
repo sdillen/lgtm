@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/go-git/go-git/v6/plumbing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/source"
+	"github.com/sdillen/lgtm/internal/source"
 )
 
 const snapRef = "refs/lgtm/review/1"

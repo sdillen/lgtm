@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/review"
 )
 
 // relocated adds c to a fresh state, relocates it from prev to next and

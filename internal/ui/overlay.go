@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/keymap"
+	"github.com/sdillen/lgtm/internal/keymap"
 )
 
 // boxChrome is the rows and columns a box adds around its lines: the

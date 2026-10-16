@@ -172,7 +172,7 @@ Ich lasse einen Großteil meiner Code-Änderungen von Agenten (Claude Code, pi, 
 - **Chroma** für Syntax-Highlighting.
 - **fsnotify** für den Watcher.
 - TOML für Konfiguration und Themes, `text/template` für den Prompt.
-- Modulpfad `gitea.fit.fraunhofer.de/ste05096/lgtm`.
+- Modulpfad `github.com/sdillen/lgtm`.
 
 ### Module (tiefe Module, schmale Interfaces)
 

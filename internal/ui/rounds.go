@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/diff"
-	"gitea.fit.fraunhofer.de/ste05096/lgtm/internal/review"
+	"github.com/sdillen/lgtm/internal/diff"
+	"github.com/sdillen/lgtm/internal/review"
 )
 
 // loadInterdiff resolves the changes since the previous round. inter

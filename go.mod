@@ -1,4 +1,4 @@
-module gitea.fit.fraunhofer.de/ste05096/lgtm
+module github.com/sdillen/lgtm
 
 go 1.26.7
 
