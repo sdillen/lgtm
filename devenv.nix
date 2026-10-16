@@ -39,7 +39,18 @@ in
   ];
 
   # https://devenv.sh/languages/
-  languages.go.enable = true;
+  languages.go = {
+    enable = true;
+    package = pkgs.go_1_27;
+  };
+
+  # go-tools' own test suite fails to compile against Go 1.27.2 in
+  # nixpkgs-unstable; the tool itself builds, so skip its checks.
+  overlays = [
+    (final: prev: {
+      go-tools = prev.go-tools.overrideAttrs { doCheck = false; };
+    })
+  ];
 
   # https://devenv.sh/scripts/
   scripts.check.exec = ''

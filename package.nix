@@ -12,7 +12,7 @@
   gitCommit ? "unknown",
 }:
 
-pkgs.buildGoModule {
+(pkgs.buildGoModule.override { go = pkgs.go_1_27; }) {
   pname = "lgtm";
   inherit version;
 
@@ -35,7 +35,7 @@ pkgs.buildGoModule {
 
   # The module sources are fetched and hashed at build time; update with
   # `nix build` after changing go.mod/go.sum.
-  vendorHash = "sha256-JrsRavPY4Q6pUd6Bytl92si2G6FB/jPkgrOaDj/6OPM=";
+  vendorHash = "sha256-vHpQLu0ryCUybnPWJNuRF/t3IKfBf2Xf7BV2RRSLj0I=";
 
   ldflags = [
     "-s"
