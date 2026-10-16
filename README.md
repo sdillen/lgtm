@@ -13,6 +13,10 @@ When coding agents (Claude Code, pi, …) write most of your changes, your job s
 - Tokyo Night themes (auto light/dark), intra-line highlighting, smooth scrolling, minimap scrollbar.
 - Pure Go: no cgo, no `git` binary needed. Works in linked worktrees.
 
+![lgtm demo: review overview, commenting a hunk and jumping to another file](docs/demo/demo.gif)
+
+The demo is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`docs/demo/demo.tape`](docs/demo/demo.tape) on a sample repository created by [`docs/demo/setup.sh`](docs/demo/setup.sh). Re-render it with `vhs docs/demo/demo.tape` from the repository root (needs `vhs`, `ttyd`, `ffmpeg` and the Iosevka font).
+
 ## Installation
 
 ```sh
