@@ -6,11 +6,21 @@ devenv.local.yaml
 # direnv
 .direnv
 
+# Exceptions to the global ignore file (~/.config/git/ignore):
+# keep the devenv and direnv configuration under version control
+!devenv.nix
+!devenv.yaml
+!devenv.lock
+!.envrc
+
 # pre-commit
 .pre-commit-config.yaml
 
 # build output
 /lgtm
+/bin/
+/dist/
+coverage.out
 
 # benchmark results and profiles
 /.bench
