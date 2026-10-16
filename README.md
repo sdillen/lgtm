@@ -23,6 +23,8 @@ The demo is recorded with [VHS](https://github.com/charmbracelet/vhs) from [`doc
 go install github.com/sdillen/lgtm@latest
 ```
 
+Or download a binary from the [releases](https://github.com/sdillen/lgtm/releases).
+
 Or build from a checkout:
 
 ```sh
@@ -198,9 +200,19 @@ This deletes `.lgtm/` and the snapshot refs under `refs/lgtm/`.
 
 ## Development
 
-The repository uses [devenv](https://devenv.sh) with `gofmt`, `go test` and `golangci-lint` hooks.
+The toolchain comes from [devenv](https://devenv.sh); with direnv it loads
+automatically. It includes `gofmt`, `go test` and `golangci-lint` hooks.
 
 ```sh
-go test ./...
-go build -ldflags "-X main.version=v0.1.0 -X main.commit=$(git rev-parse --short HEAD)" -o lgtm .
+make help    # list all targets
+make test    # tests with the race detector
+make lint    # golangci-lint
+make check   # everything CI checks
+make build   # binary in ./bin
 ```
+
+Releases are built by GoReleaser when a `v*` tag is pushed.
+
+## License
+
+[MIT](LICENSE)
