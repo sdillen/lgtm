@@ -1,6 +1,6 @@
 module github.com/sdillen/lgtm
 
-go 1.26.7
+go 1.26.9
 
 require (
 	charm.land/bubbletea/v2 v2.0.10
@@ -41,7 +41,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 )
