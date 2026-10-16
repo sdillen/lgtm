@@ -67,9 +67,13 @@ func (k *KeySeqs) UnmarshalTOML(v any) error {
 // Dir returns the lgtm config directory: $XDG_CONFIG_HOME/lgtm, or
 // ~/.config/lgtm when XDG_CONFIG_HOME is unset.
 func Dir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("config directory: %w", err)
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("config directory: %w", err)
+		}
+		base = filepath.Join(home, ".config")
 	}
 	return filepath.Join(base, "lgtm"), nil
 }

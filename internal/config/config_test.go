@@ -27,12 +27,13 @@ func TestDirFallsBackToUserConfigDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.UserConfigDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir != filepath.Join(want, "lgtm") {
-		t.Errorf("Dir() = %q, want %s", dir, filepath.Join(want, "lgtm"))
+	want := filepath.Join(home, ".config", "lgtm")
+	if dir != want {
+		t.Errorf("Dir() = %q, want %s", dir, want)
 	}
 }
 
