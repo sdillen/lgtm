@@ -48,8 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Scan with the newest Go patch release: govulncheck reports standard
+      # library vulnerabilities of the toolchain that builds the code.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: stable
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
