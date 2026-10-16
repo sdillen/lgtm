@@ -1,6 +1,6 @@
-# Issue-Tracker: Gitea (MCP)
+# Issue-Tracker: GitHub (MCP)
 
-Issues und PRDs für dieses Repository leben als Gitea Issues in `ste05096/lgtm` auf `gitea.fit.fraunhofer.de`. Der Zugriff erfolgt über die Gitea-MCP-Tools (`mcp__gitea__*`).
+Issues und PRDs für dieses Repository leben als GitHub Issues in `sdillen/lgtm` auf `github.com`. Der Zugriff erfolgt über die GitHub-MCP-Tools (`mcp__github__*`), z. B. `mcp__github__issue_write` zum Anlegen und Aktualisieren, `mcp__github__issue_read` zum Lesen und `mcp__github__list_issues` bzw. `mcp__github__search_issues` zum Suchen.
 
 ## Pull Requests als Triage-Oberfläche
 
@@ -8,8 +8,8 @@ Issues und PRDs für dieses Repository leben als Gitea Issues in `ste05096/lgtm`
 
 ## Wenn ein Skill sagt „im Issue-Tracker veröffentlichen"
 
-Erstelle ein Gitea Issue in `ste05096/lgtm`.
+Erstelle ein GitHub Issue in `sdillen/lgtm` (`mcp__github__issue_write` mit `method: create`).
 
 ## Wenn ein Skill sagt „das relevante Ticket abrufen"
 
-Lies das Gitea Issue inklusive Kommentaren aus `ste05096/lgtm`.
+Lies das GitHub Issue inklusive Kommentaren aus `sdillen/lgtm` (`mcp__github__issue_read`).

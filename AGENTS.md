@@ -6,7 +6,7 @@ Code-Review-TUI für agentische Workflows. Anforderungen, Module und Testentsche
 
 ### Issue-Tracker
 
-Issues und PRDs leben als Gitea Issues in `ste05096/lgtm`, Zugriff über die Gitea-MCP-Tools; externe PRs sind keine Triage-Oberfläche. Siehe `docs/agents/issue-tracker.md`.
+Issues und PRDs leben als GitHub Issues in `sdillen/lgtm`, Zugriff über die GitHub-MCP-Tools; externe PRs sind keine Triage-Oberfläche. Siehe `docs/agents/issue-tracker.md`.
 
 ### Triage-Labels
 
