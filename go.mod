@@ -16,7 +16,7 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/lucasb-eyer/go-colorful v1.4.1
-	znkr.io/diff v1.1.3
+	znkr.io/diff v1.1.4
 )
 
 require (
